@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: check out the code
+        uses: actions/checkout@v6
+
+      - name: install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: restore .NET dependencies
+        run: dotnet restore backend/
+
+      - name: build backend <my-project>
+        run: dotnet build backend/ --no-restore
+
+      - name: test backend
+        run: dotnet test backend/ --no-restore
+
+      - name: install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: install frontend dependencies
+        run: npm ci
+        working-directory: frontend/
+
+      - name: build frontend
+        run: npx nx build my-app
+        working-directory: frontend/
+
+      - name: test frontend
+        run: npx nx test my-app
+        working-directory: frontend/
