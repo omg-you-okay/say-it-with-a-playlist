@@ -55,6 +55,11 @@ const eslintConfig = defineConfig([
       ],
     },
     rules: {
+      // Fail loudly if a file under src/ matches no element type, so the
+      // architecture taxonomy stays exhaustive instead of silently
+      // unconstrained (e.g. a stray file directly in src/ or a future
+      // src/middleware.ts would otherwise escape all boundary rules).
+      "boundaries/no-unknown-files": "error",
       "boundaries/dependencies": [
         "error",
         {
