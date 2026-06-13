@@ -39,4 +39,4 @@ One deployable, two strictly separated logical subsystems (Identity, Playlist) f
 
 ## Workflow
 
-`main` ← `develop` ← `feature/*` / `fix/*` / `chore/*`; all work lands via PR into `develop` with the CI check green. Commits follow `type(scope): description`.
+GitHub Flow: `feature/*` / `fix/*` / `chore/*` → `main`; all work lands via PR into `main` with the CI check green (`main` is protected). Commits follow `type(scope): description`. See [docs/decisions/0007](docs/decisions/0007-github-flow-single-main-branch.md).

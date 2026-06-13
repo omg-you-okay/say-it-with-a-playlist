@@ -95,8 +95,8 @@ A relational store holding:
 
 This is as important as the code itself; the project deliberately practices professional engineering discipline:
 
-- **Branching:** `main` (production) ← `develop` ← `feature/*`, `fix/*`, `chore/*`. All work lands via PRs into `develop`
-- **CI grows with the code:** the pipeline starts minimal and gains steps (build, test, lint) only as the corresponding code exists — never failing checks for an app that isn't there yet. Branch protection on `develop` requires the CI check to pass
+- **Branching:** GitHub Flow — `feature/*`, `fix/*`, `chore/*` branch off `main` and land back via PR into `main` (always deployable). _(Updated from the original GitFlow `develop` model — see docs/decisions/0007.)_
+- **CI grows with the code:** the pipeline starts minimal and gains steps (build, test, lint) only as the corresponding code exists — never failing checks for an app that isn't there yet. Branch protection on `main` requires the CI check to pass
 - **Commit format:** `type(scope): description`
 - **Tests are written alongside implementation, not after:** core logic gets unit tests before moving on; every endpoint gets an integration test before shipping; auth testing is non-negotiable
 - **Ship small, ship often:** tiny scope per feature, every merge is deployable
