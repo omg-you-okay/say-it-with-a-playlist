@@ -141,4 +141,9 @@ This is as important as the code itself; the project deliberately practices prof
 
 ## 11. Current State
 
-Phase 0 is partially complete: repo with branching strategy, incremental CI workflow, branch protection ruleset, and ignore rules are done. **Immediate next step:** the containerised local dev environment (API + database + reverse proxy), including correct container startup ordering (health-based readiness, not mere start order). After that: monorepo workspace initialisation and the backend solution scaffold with the iDesign folder structure for both subsystems.
+This section intentionally holds **no volatile status** — that belongs in the roadmap, so it stays correct as features land instead of going stale in a file that is loaded into every session.
+
+- **Where the project is, the per-iteration breakdown, and each iteration's "done when":** `docs/roadmap.md` — the single source of truth for status.
+- **Locked architectural decisions (the _why_):** `docs/decisions/` (ADRs).
+
+Start a feature with `/kickoff` (loads the next iteration + its constraints, branches, plans) and close it with `/wrap` (writes status/decisions back so the next clean session is correct).
