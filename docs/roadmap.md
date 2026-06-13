@@ -51,6 +51,10 @@ placed in `AuthEngine` rather than a Resource (ADR 0008).
   - **Infra:** hosted Supabase project + Supabase MCP — not provisioned (app runs on local Postgres; no deploy target yet). Optional Playwright MCP also not added.
   - **`UserEngine`** — no pure user logic needed yet (YAGNI).
   - **Secrets strategy** (local `.env` / CI GitHub Secrets / prod host env) — discussed, decision deferred to a follow-up PR; no ADR yet.
+- **Code-review follow-ups (PR #7, minor — not blocking):**
+  - Clear the OAuth state cookie on the callback **failure/mismatch** paths too (today only the success path deletes it).
+  - Add an explicit `SpotifyTokenSet → StoredTokens` mapper so the two near-identical token shapes can't drift (ADR 0008 keeps them as separate types on purpose).
+  - Unify the cookie-clear idiom: `logout` hand-rolls `maxAge:0` while `callback` uses `cookies.delete()`.
 - **Done when:** a user can log in with Spotify, a session cookie is set, tokens are stored, and refresh works server-side. ✅ met (refresh covered by unit tests; live login verified locally).
 
 ---
@@ -64,7 +68,7 @@ unit-testable; match validation talks to the music API; the backtracking loop li
 - Shared normalization utility: lowercase, strip punctuation/diacritics, strip version suffixes (parens/bracket/dash tails) — used by both engines (ADR 0003).
 - `SentenceEngine` — tokenise; generate multi-word candidate groupings in priority order; apply substitution map (to→2, you→U, for→4, are→R; one→1…ten→10; and→&; be→B/see→C/why→Y/oh→O/ex→X) (ADR 0003). **Pure, no external deps.**
 - `SpotifyEngine` — match-quality judgement: exact equality after normalization (ADR 0003).
-- `SpotifyResource` — Spotify search API access (reads access token from the shared token store).
+- `SpotifyResource` — Spotify search API access (reads access token from the shared token store). **First caller of `UserManager.getFreshAccessToken`** — add a per-user lock / `SELECT … FOR UPDATE` here to fix the latent concurrent-refresh race flagged in PR #7 review (two parallel refreshes can persist a rotated-out refresh token → later `invalid_grant`).
 - `PlaylistManager` — the backtracking orchestration loop: try candidate → validate → on failure backtrack and re-derive groupings for the remainder; give up = no playlist (ADR 0003 no-match behavior).
 - **Tests:** heavy unit coverage of SentenceEngine + normalization + backtracking; mocked search.
 - **Done when:** given a sentence, the loop returns an ordered set of matched tracks covering the whole sentence, or a list of unmatched phrases.
