@@ -14,6 +14,19 @@ import { SESSION_COOKIE, SESSION_MAX_AGE } from "@/server/shared/session";
 // home with an `auth_error` query param rather than leaking internals; the
 // frontend (Iteration 4) renders it.
 
+// Known OAuth 2.0 error codes Spotify may return on the callback. Anything
+// outside this set is collapsed to a fixed code so a fully attacker-controlled
+// `?error=` value is never reflected into the page the frontend renders.
+const SPOTIFY_ERROR_CODES = new Set([
+  "access_denied",
+  "invalid_request",
+  "invalid_scope",
+  "unauthorized_client",
+  "unsupported_response_type",
+  "server_error",
+  "temporarily_unavailable",
+]);
+
 function redirectHome(request: NextRequest, authError?: string): NextResponse {
   const url = new URL("/", request.url);
   if (authError) url.searchParams.set("auth_error", authError);
@@ -25,7 +38,12 @@ export async function GET(request: NextRequest) {
 
   // The user denied consent (or Spotify errored) — no code will be present.
   const spotifyError = params.get("error");
-  if (spotifyError) return redirectHome(request, spotifyError);
+  if (spotifyError) {
+    return redirectHome(
+      request,
+      SPOTIFY_ERROR_CODES.has(spotifyError) ? spotifyError : "spotify_error",
+    );
+  }
 
   const code = params.get("code");
   const state = params.get("state");

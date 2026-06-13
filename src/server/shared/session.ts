@@ -12,8 +12,18 @@ export const SESSION_COOKIE = "siwap_session";
 // 7 days, in seconds — used both for the JWT expiry and the cookie Max-Age.
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
+// HS256 is only as strong as the secret. Reject anything too short to brute-force
+// safely — a weak SESSION_SECRET makes session JWTs forgeable.
+const MIN_SECRET_LENGTH = 32;
+
 function secretKey(): Uint8Array {
-  return new TextEncoder().encode(requireEnv("SESSION_SECRET"));
+  const secret = requireEnv("SESSION_SECRET");
+  if (secret.length < MIN_SECRET_LENGTH) {
+    throw new Error(
+      `SESSION_SECRET must be at least ${MIN_SECRET_LENGTH} characters (generate with: openssl rand -base64 32)`,
+    );
+  }
+  return new TextEncoder().encode(secret);
 }
 
 /** Mint a signed session token carrying the app user id as the JWT subject. */

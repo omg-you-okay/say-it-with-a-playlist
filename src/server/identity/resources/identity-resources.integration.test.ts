@@ -1,6 +1,8 @@
 import { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
+import { assertDisposableTestDb } from "@/server/shared/db";
+
 import { createTokenResource } from "./TokenResource";
 import { createUserResource } from "./UserResource";
 
@@ -10,6 +12,11 @@ import { createUserResource } from "./UserResource";
 const connectionString =
   process.env.DATABASE_URL ??
   "postgresql://postgres:postgres@127.0.0.1:5432/say_it_with_a_playlist";
+
+// These tests TRUNCATE tables. Refuse to run against anything that isn't the
+// local/CI throwaway database, so a stray DATABASE_URL pointing at a real DB
+// can never be wiped.
+assertDisposableTestDb(connectionString);
 
 const pool = new Pool({ connectionString });
 const users = createUserResource(pool);

@@ -10,7 +10,7 @@ import {
 } from "vitest";
 
 import { OAUTH_STATE_COOKIE } from "@/server/shared/cookies";
-import { getPool } from "@/server/shared/db";
+import { assertDisposableTestDb, getPool } from "@/server/shared/db";
 import { readSessionToken, SESSION_COOKIE } from "@/server/shared/session";
 
 import { GET as callback } from "./callback/route";
@@ -62,6 +62,7 @@ beforeAll(() => {
   process.env.SESSION_SECRET = "test-secret-at-least-32-bytes-long-xx";
   process.env.DATABASE_URL ??=
     "postgresql://postgres:postgres@127.0.0.1:5432/say_it_with_a_playlist";
+  assertDisposableTestDb(process.env.DATABASE_URL);
 });
 
 afterEach(async () => {
@@ -144,6 +145,13 @@ describe("GET /api/auth/callback", () => {
     const response = await callback(callbackRequest("error=access_denied"));
     expect(response.headers.get("location")).toContain(
       "auth_error=access_denied",
+    );
+  });
+
+  it("collapses an unknown/attacker-controlled error code to a fixed value", async () => {
+    const response = await callback(callbackRequest("error=phishy"));
+    expect(response.headers.get("location")).toContain(
+      "auth_error=spotify_error",
     );
   });
 

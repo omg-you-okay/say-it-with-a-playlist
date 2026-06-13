@@ -36,4 +36,11 @@ describe("session token", () => {
       /SESSION_SECRET/,
     );
   });
+
+  it("rejects a SESSION_SECRET shorter than 32 characters", async () => {
+    process.env.SESSION_SECRET = "too-short";
+    await expect(createSessionToken("user-123")).rejects.toThrow(
+      /at least 32 characters/,
+    );
+  });
 });

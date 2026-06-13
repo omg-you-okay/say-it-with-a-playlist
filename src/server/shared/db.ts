@@ -23,3 +23,19 @@ export function getPool(): Pool {
   }
   return globalForDb.__siwapPool;
 }
+
+/**
+ * Guard for destructive integration tests: throw unless `connectionString`
+ * targets the local/CI throwaway database. This prevents a stray `DATABASE_URL`
+ * pointing at a real database from being TRUNCATEd by the test suite.
+ */
+export function assertDisposableTestDb(connectionString: string): void {
+  const { hostname, pathname } = new URL(connectionString);
+  const isLocalHost = hostname === "127.0.0.1" || hostname === "localhost";
+  if (!isLocalHost || pathname !== "/say_it_with_a_playlist") {
+    throw new Error(
+      `Refusing to run destructive integration tests against ${hostname}${pathname}. ` +
+        `Point DATABASE_URL at the local say_it_with_a_playlist database.`,
+    );
+  }
+}

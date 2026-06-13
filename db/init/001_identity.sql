@@ -11,7 +11,7 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto; -- for gen_random_uuid()
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   spotify_user_id  TEXT NOT NULL UNIQUE,
   display_name     TEXT,
@@ -20,7 +20,7 @@ CREATE TABLE users (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE spotify_tokens (
+CREATE TABLE IF NOT EXISTS spotify_tokens (
   user_id        UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
   access_token   TEXT NOT NULL,
   refresh_token  TEXT NOT NULL,
