@@ -8,10 +8,15 @@
   // Only run Prettier when the repo actually has a Prettier config (it does).
   "prettier.requireConfig": true,
 
-  // Import sorting is handled by Prettier (see prettier.config.mjs), NOT by the
-  // editor's built-in sort — disable that so the two don't fight on save.
+  // NOTE: VSCode MERGES editor.codeActionsOnSave across User + Workspace scopes
+  // (per key), so a dev's global actions would otherwise still run on save here.
+  // We explicitly turn off the import/fix-all actions Prettier already owns, and
+  // keep only ESLint's fixAll. This makes on-save behaviour identical for everyone.
   "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": "explicit"
+    "source.fixAll.eslint": "explicit",
+    "source.fixAll": "never",
+    "source.sortImports": "never",
+    "source.organizeImports": "never"
   },
 
   // Make Prettier the formatter for every file type we use, regardless of what
