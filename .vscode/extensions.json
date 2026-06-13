@@ -1,0 +1,5 @@
+{
+  // Prompts teammates to install the extensions this project's workspace
+  // settings rely on.
+  "recommendations": ["esbenp.prettier-vscode", "dbaeumer.vscode-eslint"]
+}

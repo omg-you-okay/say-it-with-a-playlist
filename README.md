@@ -21,17 +21,17 @@ Requires Docker. `DATABASE_URL` in `.env` points at the container started by `pn
 
 ## Scripts
 
-| Command | What it does |
-| --- | --- |
-| `pnpm dev` | run the dev server |
-| `pnpm db:up` | start local Postgres (Docker, detached) |
-| `pnpm db:down` | stop & remove the Postgres container (data kept) |
-| `pnpm db:reset` | wipe the data volume and start fresh |
-| `pnpm db:logs` | tail Postgres logs |
-| `pnpm lint` | ESLint, including architecture-boundary rules |
-| `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm test` | Vitest, single run |
-| `pnpm build` | production build |
+| Command          | What it does                                     |
+| ---------------- | ------------------------------------------------ |
+| `pnpm dev`       | run the dev server                               |
+| `pnpm db:up`     | start local Postgres (Docker, detached)          |
+| `pnpm db:down`   | stop & remove the Postgres container (data kept) |
+| `pnpm db:reset`  | wipe the data volume and start fresh             |
+| `pnpm db:logs`   | tail Postgres logs                               |
+| `pnpm lint`      | ESLint, including architecture-boundary rules    |
+| `pnpm typecheck` | `tsc --noEmit`                                   |
+| `pnpm test`      | Vitest, single run                               |
+| `pnpm build`     | production build                                 |
 
 ## Architecture
 

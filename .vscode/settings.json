@@ -1,0 +1,27 @@
+{
+  // Committed workspace settings — these OVERRIDE each developer's personal
+  // (User) settings for this project, so everyone gets identical formatting.
+
+  // Format on save using Prettier, configured by prettier.config.mjs.
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  // Only run Prettier when the repo actually has a Prettier config (it does).
+  "prettier.requireConfig": true,
+
+  // Import sorting is handled by Prettier (see prettier.config.mjs), NOT by the
+  // editor's built-in sort — disable that so the two don't fight on save.
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+
+  // Make Prettier the formatter for every file type we use, regardless of what
+  // a developer has set globally.
+  "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[javascriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[jsonc]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[css]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[markdown]": { "editor.defaultFormatter": "esbenp.prettier-vscode" }
+}

@@ -19,7 +19,7 @@ shared/                         # db client, config, pure utils — not an Engin
 - Resources are the lowest layer and only use `shared/`.
 - Identity and Playlist never import each other.
 - **Sanctioned exception (the one cross-subsystem touchpoint):** `TokenResource` is the
-  shared token store — Identity writes it, Playlist *reads* it. Any Manager may import it;
+  shared token store — Identity writes it, Playlist _reads_ it. Any Manager may import it;
   nothing else crosses the boundary.
 - Cross-subsystem orchestration (e.g. "refresh token, then generate") is sequenced in the
   route handler, above the manager layer — Managers never call Managers.

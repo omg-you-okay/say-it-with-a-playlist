@@ -1,7 +1,7 @@
-import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import boundaries from "eslint-plugin-boundaries";
+import { defineConfig, globalIgnores } from "eslint/config";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -41,9 +41,17 @@ const eslintConfig = defineConfig([
           mode: "file",
           capture: ["subsystem"],
         },
-        { type: "server-shared", pattern: "src/server/shared/**/*", mode: "file" },
+        {
+          type: "server-shared",
+          pattern: "src/server/shared/**/*",
+          mode: "file",
+        },
         { type: "app", pattern: "src/app/**/*", mode: "file" },
-        { type: "ui", pattern: "src/(components|hooks|lib)/**/*", mode: "file" },
+        {
+          type: "ui",
+          pattern: "src/(components|hooks|lib)/**/*",
+          mode: "file",
+        },
       ],
     },
     rules: {
@@ -54,7 +62,9 @@ const eslintConfig = defineConfig([
           rules: [
             {
               from: { type: "app" },
-              allow: { to: { type: ["app", "ui", "manager", "server-shared"] } },
+              allow: {
+                to: { type: ["app", "ui", "manager", "server-shared"] },
+              },
             },
             { from: { type: "ui" }, allow: { to: { type: "ui" } } },
             {
