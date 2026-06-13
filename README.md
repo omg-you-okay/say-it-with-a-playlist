@@ -6,22 +6,28 @@ Full project brief and locked architecture decisions: [CLAUDE.md](CLAUDE.md). Ar
 
 ## Stack
 
-Next.js (App Router, TypeScript) full-stack · Supabase (Postgres) · shadcn/ui + Tailwind · Vitest
+Next.js (App Router, TypeScript) full-stack · Postgres (Supabase in prod, plain Postgres in dev) · shadcn/ui + Tailwind · Vitest
 
 ## Local development
 
 ```bash
 pnpm install
-pnpm supabase start   # local Postgres etc. (requires Docker)
+pnpm db:up            # start local Postgres in Docker (waits until healthy)
 cp .env.example .env  # then fill in the values
 pnpm dev              # http://localhost:3000
 ```
+
+Requires Docker. `DATABASE_URL` in `.env` points at the container started by `pnpm db:up`.
 
 ## Scripts
 
 | Command | What it does |
 | --- | --- |
 | `pnpm dev` | run the dev server |
+| `pnpm db:up` | start local Postgres (Docker, detached) |
+| `pnpm db:down` | stop & remove the Postgres container (data kept) |
+| `pnpm db:reset` | wipe the data volume and start fresh |
+| `pnpm db:logs` | tail Postgres logs |
 | `pnpm lint` | ESLint, including architecture-boundary rules |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm test` | Vitest, single run |

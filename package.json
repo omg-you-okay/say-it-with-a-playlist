@@ -9,7 +9,11 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "db:logs": "docker compose logs -f db"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -32,7 +36,6 @@
     "eslint-config-next": "16.2.9",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-boundaries": "^6.0.2",
-    "supabase": "^2.105.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.8"

@@ -1,0 +1,40 @@
+# Local development database.
+#
+# A single Postgres container — this replaces the full Supabase CLI stack.
+# We use Supabase only as managed Postgres in production; locally we just need
+# Postgres itself (see docs/decisions/0005-local-dev-plain-postgres.md).
+#
+#   pnpm db:up      start (detached)
+#   pnpm db:down    stop & remove the container (data volume kept)
+#   pnpm db:reset   wipe the data volume and start fresh
+#   pnpm db:logs    tail logs
+#
+# Connection string for .env:
+#   DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/say_it_with_a_playlist
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: siwap_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: say_it_with_a_playlist
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # *.sql / *.sh files here run in alphabetical order the first time the
+      # volume is created (fresh DB). Re-run them with `pnpm db:reset`.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    # Health-based readiness: dependents can wait on `service_healthy`, and
+    # `pnpm db:up` only reports ready once Postgres actually accepts connections.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d say_it_with_a_playlist"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  db_data:

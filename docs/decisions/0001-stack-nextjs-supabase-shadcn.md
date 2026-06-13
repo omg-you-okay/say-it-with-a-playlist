@@ -1,6 +1,6 @@
 # 0001 — Stack: Next.js + Supabase (Postgres) + shadcn/ui
 
-Date: 2026-06-11 · Status: accepted
+Date: 2026-06-11 · Status: accepted · Local-dev & data-access portions superseded by [0005](0005-local-dev-plain-postgres.md)
 
 ## Context
 
