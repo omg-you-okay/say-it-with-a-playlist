@@ -10,7 +10,7 @@ Iteration-2 search integration follows this literally: `SpotifyResource` owns
 the Spotify search HTTP.
 
 OAuth, however, is awkward under that split. The token exchange and refresh are
-HTTP calls to `accounts.spotify.com`, but they are also the *core OAuth logic*
+HTTP calls to `accounts.spotify.com`, but they are also the _core OAuth logic_
 (building the request, applying Basic auth, parsing/normalizing the token
 response, computing expiry). The roadmap's Iteration-1 row deliberately assigned
 all of this — "build the authorize URL; exchange auth code → tokens; refresh

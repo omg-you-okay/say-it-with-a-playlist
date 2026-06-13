@@ -39,23 +39,24 @@ placed in `AuthEngine` rather than a Resource (ADR 0008).
 
 **Prerequisite (owner):** Spotify dev app with loopback redirect
 `http://127.0.0.1:3000/api/auth/callback`. ✅ done by owner; verified locally (login redirect
-+ state cookie, callback persists user + tokens, session cookie set).
 
-- ✅ `AuthEngine` — authorize URL (scopes + state); code→token exchange; refresh; profile fetch. `fetch`/clock injected → unit-testable. Scopes include `playlist-modify-*` up front to avoid re-consent in Iter 3.
-- ✅ `UserResource` (`upsertBySpotifyId`) / `TokenResource` (`save`/`get`, the shared token store). `pg` driver + pool in `shared/db.ts`; first migration `db/init/001_identity.sql`.
-- ✅ `UserManager` — `beginLogin` / `handleCallback` (validates state → exchange → upsert → store → mint session) / `getFreshAccessToken` (server-side refresh on expiry).
-- ✅ Route handlers: `GET /api/auth/login`, `GET /api/auth/callback`, `POST /api/auth/logout`. Refresh is a `UserManager` method (no endpoint yet — no caller until Playlist; YAGNI).
-- ✅ Session cookie via `jose` (`shared/session.ts`): httpOnly, SameSite=Lax, payload = app user id. Cookie config in `shared/cookies.ts`. Dev server bound to `127.0.0.1` (`next dev -H 127.0.0.1`) so the browse origin matches the OAuth origin.
-- ✅ **Tests (35 passing):** AuthEngine units (fake fetch); session units; UserManager orchestration (mocked deps); Resource + auth-route integration tests against real Postgres (CI grew a `postgres:17-alpine` service + `pnpm db:migrate`).
-- **Deferred (NOT done this iteration):**
+- state cookie, callback persists user + tokens, session cookie set).
+
+* ✅ `AuthEngine` — authorize URL (scopes + state); code→token exchange; refresh; profile fetch. `fetch`/clock injected → unit-testable. Scopes include `playlist-modify-*` up front to avoid re-consent in Iter 3.
+* ✅ `UserResource` (`upsertBySpotifyId`) / `TokenResource` (`save`/`get`, the shared token store). `pg` driver + pool in `shared/db.ts`; first migration `db/init/001_identity.sql`.
+* ✅ `UserManager` — `beginLogin` / `handleCallback` (validates state → exchange → upsert → store → mint session) / `getFreshAccessToken` (server-side refresh on expiry).
+* ✅ Route handlers: `GET /api/auth/login`, `GET /api/auth/callback`, `POST /api/auth/logout`. Refresh is a `UserManager` method (no endpoint yet — no caller until Playlist; YAGNI).
+* ✅ Session cookie via `jose` (`shared/session.ts`): httpOnly, SameSite=Lax, payload = app user id. Cookie config in `shared/cookies.ts`. Dev server bound to `127.0.0.1` (`next dev -H 127.0.0.1`) so the browse origin matches the OAuth origin.
+* ✅ **Tests (35 passing):** AuthEngine units (fake fetch); session units; UserManager orchestration (mocked deps); Resource + auth-route integration tests against real Postgres (CI grew a `postgres:17-alpine` service + `pnpm db:migrate`).
+* **Deferred (NOT done this iteration):**
   - **Infra:** hosted Supabase project + Supabase MCP — not provisioned (app runs on local Postgres; no deploy target yet). Optional Playwright MCP also not added.
   - **`UserEngine`** — no pure user logic needed yet (YAGNI).
   - **Secrets strategy** (local `.env` / CI GitHub Secrets / prod host env) — discussed, decision deferred to a follow-up PR; no ADR yet.
-- **Code-review follow-ups (PR #7, minor — not blocking):**
+* **Code-review follow-ups (PR #7, minor — not blocking):**
   - Clear the OAuth state cookie on the callback **failure/mismatch** paths too (today only the success path deletes it).
   - Add an explicit `SpotifyTokenSet → StoredTokens` mapper so the two near-identical token shapes can't drift (ADR 0008 keeps them as separate types on purpose).
   - Unify the cookie-clear idiom: `logout` hand-rolls `maxAge:0` while `callback` uses `cookies.delete()`.
-- **Done when:** a user can log in with Spotify, a session cookie is set, tokens are stored, and refresh works server-side. ✅ met (refresh covered by unit tests; live login verified locally).
+* **Done when:** a user can log in with Spotify, a session cookie is set, tokens are stored, and refresh works server-side. ✅ met (refresh covered by unit tests; live login verified locally).
 
 ---
 
