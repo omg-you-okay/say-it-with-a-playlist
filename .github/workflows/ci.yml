@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
     branches:
-      - develop
+      - main
 
 jobs:
   build-and-test:
@@ -12,33 +12,28 @@ jobs:
       - name: check out the code
         uses: actions/checkout@v6
 
-      - name: install .NET
-        uses: actions/setup-dotnet@v5
+      - name: install pnpm
+        uses: pnpm/action-setup@v6
         with:
-          dotnet-version: "10.0.x"
-
-      - name: restore .NET dependencies
-        run: dotnet restore backend/
-
-      - name: build backend <my-project>
-        run: dotnet build backend/ --no-restore
-
-      - name: test backend
-        run: dotnet test backend/ --no-restore
+          version: 10
 
       - name: install Node
         uses: actions/setup-node@v6
         with:
           node-version: 24.x
+          cache: pnpm
 
-      - name: install frontend dependencies
-        run: npm ci
-        working-directory: frontend/
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: build frontend
-        run: npx nx build my-app
-        working-directory: frontend/
+      - name: lint
+        run: pnpm lint
 
-      - name: test frontend
-        run: npx nx test my-app
-        working-directory: frontend/
+      - name: typecheck
+        run: pnpm typecheck
+
+      - name: test
+        run: pnpm test
+
+      - name: build
+        run: pnpm build
