@@ -8,6 +8,27 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+
+    # Postgres for the integration tests (Resources + auth route handlers).
+    # The DB layer arrives this iteration, so CI grows a database (ADR 0004).
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: say_it_with_a_playlist
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d say_it_with_a_playlist"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/say_it_with_a_playlist
+
     steps:
       - name: check out the code
         uses: actions/checkout@v6
@@ -25,6 +46,9 @@ jobs:
 
       - name: install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: apply database migrations
+        run: pnpm db:migrate
 
       - name: lint
         run: pnpm lint
