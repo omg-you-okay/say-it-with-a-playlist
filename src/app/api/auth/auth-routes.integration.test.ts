@@ -161,6 +161,20 @@ describe("GET /api/auth/callback", () => {
       "auth_error=missing_params",
     );
   });
+
+  it("pins the redirect to the real Host header, not request.url", async () => {
+    // Reproduces the `next dev` quirk: `request.url` resolves to `localhost`
+    // while the browser actually hit `127.0.0.1` (the Host header). The
+    // redirect must follow the header so the session cookie isn't stranded on a
+    // different origin.
+    const request = new NextRequest(
+      "http://localhost:3000/api/auth/callback?error=access_denied",
+      { headers: { host: "127.0.0.1:3000" } },
+    );
+    const response = await callback(request);
+    const location = new URL(response.headers.get("location")!);
+    expect(location.host).toBe("127.0.0.1:3000");
+  });
 });
 
 describe("POST /api/auth/logout", () => {

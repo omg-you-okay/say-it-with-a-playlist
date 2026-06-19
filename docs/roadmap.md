@@ -31,7 +31,7 @@ Repo + GitHub Flow branching (ADR 0007) · incremental CI `build-and-test` singl
 
 ---
 
-## Iteration 1 — OAuth / Identity subsystem ✅ DONE (PR #TBD)
+## Iteration 1 — OAuth / Identity subsystem ✅ DONE (PR #7)
 
 Full Spotify OAuth 2.0 Authorization Code round-trip. Backend holds all tokens; they never
 reach the frontend (locked). Session = httpOnly signed JWT cookie (ADR 0002). OAuth HTTP
@@ -52,6 +52,7 @@ placed in `AuthEngine` rather than a Resource (ADR 0008).
   - **Infra:** hosted Supabase project + Supabase MCP — not provisioned (app runs on local Postgres; no deploy target yet). Optional Playwright MCP also not added.
   - **`UserEngine`** — no pure user logic needed yet (YAGNI).
   - **Secrets strategy** (local `.env` / CI GitHub Secrets / prod host env) — discussed, decision deferred to a follow-up PR; no ADR yet.
+* **Post-merge fix (PR #TBD):** live login worked but the OAuth callback's success/error redirect landed the browser on `localhost` instead of `127.0.0.1`, stranding the just-set session cookie on the wrong origin (→ logged out). Root cause: `next dev` resolves `request.url`'s host to `localhost` even with `-H 127.0.0.1`, so `new URL("/", request.url)` was wrong. Fixed `redirectHome` to derive host from the `Host` header (`x-forwarded-host`/`-proto` aware) instead of `request.url`; added a regression test. Binding to `127.0.0.1` (line above) is necessary but was not sufficient on its own.
 * **Code-review follow-ups (PR #7, minor — not blocking):**
   - Clear the OAuth state cookie on the callback **failure/mismatch** paths too (today only the success path deletes it).
   - Add an explicit `SpotifyTokenSet → StoredTokens` mapper so the two near-identical token shapes can't drift (ADR 0008 keeps them as separate types on purpose).

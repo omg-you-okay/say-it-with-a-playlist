@@ -28,7 +28,20 @@ const SPOTIFY_ERROR_CODES = new Set([
 ]);
 
 function redirectHome(request: NextRequest, authError?: string): NextResponse {
-  const url = new URL("/", request.url);
+  // `request.url`/`nextUrl` resolves its host to `localhost` under `next dev`
+  // even when the request genuinely arrived on `127.0.0.1` (where Spotify's
+  // redirect_uri points). Redirecting there would strand the session cookie —
+  // set on the `127.0.0.1` callback response — on a different origin, logging
+  // the user straight back out. Pin the redirect to the host the request
+  // actually came in on, honouring proxy forwarding headers.
+  const host =
+    request.headers.get("x-forwarded-host") ??
+    request.headers.get("host") ??
+    request.nextUrl.host;
+  const proto =
+    request.headers.get("x-forwarded-proto") ??
+    request.nextUrl.protocol.replace(/:$/, "");
+  const url = new URL("/", `${proto}://${host}`);
   if (authError) url.searchParams.set("auth_error", authError);
   return NextResponse.redirect(url);
 }
