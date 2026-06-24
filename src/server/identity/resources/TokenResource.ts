@@ -2,10 +2,11 @@ import type { Pool } from "pg";
 
 import { getPool } from "@/server/shared/db";
 
-// TokenResource — the shared token store (brief §4/§6). The Identity subsystem
-// writes it here; the Playlist subsystem will read it later. This is the one
-// sanctioned cross-subsystem touchpoint, so its types are defined locally
-// rather than borrowed from an Engine — it must not depend on either subsystem.
+// TokenResource — the Identity-private token store (brief §4/§6). Identity reads
+// and writes it; it is NOT read across the subsystem boundary. Playlist obtains a
+// fresh access token through the `UserManagerResource` adapter → `UserManager`
+// instead (ADR 0009), since a raw read can't refresh an expired token. Its row
+// types are defined locally so it depends on neither Engine.
 // Exactly one row per user (user_id is the primary key).
 
 export interface StoredTokens {

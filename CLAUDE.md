@@ -62,11 +62,11 @@ The project follows the **iDesign methodology** — decomposition by volatility,
    - Managers call Engines and Resources
    - **Engines never call other Engines**
    - Layers are never collapsed or skipped for convenience
-   - Managers do not call Managers directly; cross-subsystem data sharing happens through a **shared data resource** (specifically: the Playlist subsystem reads the user's access token from the same token store the Identity subsystem writes to — not by calling into Identity)
+   - Managers do not call Managers directly. When one subsystem needs something from another, the caller's subsystem owns a **manager-resource** — a Resource whose "external system" is the other subsystem's **Manager** (its public front door). It is named after the target manager (`<TargetManager>Resource`) and is the one sanctioned cross-subsystem touchpoint (ADR 0009). Specifically: the Playlist subsystem obtains a *fresh* access token via a `UserManagerResource` that calls `UserManager.getFreshAccessToken` — it does **not** read Identity's token store directly (a raw read can't refresh an expired token)
 
 4. **Component inventory (names are part of the shared vocabulary):**
-   - Identity: UserManager, AuthEngine, UserEngine, UserResource, TokenResource
-   - Playlist: PlaylistManager, SentenceEngine, SpotifyEngine, SpotifyResource, PlaylistResource
+   - Identity: UserManager, AuthEngine, UserEngine, UserResource, TokenResource (Identity-private)
+   - Playlist: PlaylistManager, SentenceEngine, SpotifyEngine, SpotifyResource, PlaylistResource, UserManagerResource (the cross-subsystem adapter to Identity, added Iteration 3)
    - The backtracking orchestration loop lives in **PlaylistManager**
 
 ---
@@ -86,7 +86,7 @@ The project follows the **iDesign methodology** — decomposition by volatility,
 A relational store holding:
 
 - **Users** — app-side user records linked to their Spotify identity
-- **Tokens** — access + refresh tokens per user (written by Identity, read by Playlist — the one sanctioned cross-subsystem touchpoint)
+- **Tokens** — access + refresh tokens per user (owned by Identity's `TokenResource`; Playlist obtains a fresh token through the `UserManagerResource` adapter, not by reading this table directly — ADR 0009)
 - **Playlist history** — record of generated playlists per user (sentence, tracks, link, timestamp)
 
 ---

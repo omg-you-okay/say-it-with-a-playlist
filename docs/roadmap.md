@@ -11,7 +11,8 @@ prod only · shadcn/ui · TypeScript · Vitest. Data access via the `pg` driver,
 iteration it is first needed (ADR 0005). Local DB = single `postgres:17-alpine` container.
 
 **iDesign layering (CLAUDE.md §4):** Managers → (Engines, Resources). Engines never call
-Engines. No layer skipping. Cross-subsystem sharing only via the shared token store.
+Engines. No layer skipping. Crossing a subsystem boundary goes through a **manager-resource**
+— a Resource in the caller's subsystem that calls the other subsystem's Manager (ADR 0009).
 
 | Subsystem | Managers                                       | Engines                           | Resources                             |
 | --------- | ---------------------------------------------- | --------------------------------- | ------------------------------------- |
@@ -43,7 +44,7 @@ placed in `AuthEngine` rather than a Resource (ADR 0008).
 - state cookie, callback persists user + tokens, session cookie set).
 
 * ✅ `AuthEngine` — authorize URL (scopes + state); code→token exchange; refresh; profile fetch. `fetch`/clock injected → unit-testable. Scopes include `playlist-modify-*` up front to avoid re-consent in Iter 3.
-* ✅ `UserResource` (`upsertBySpotifyId`) / `TokenResource` (`save`/`get`, the shared token store). `pg` driver + pool in `shared/db.ts`; first migration `db/init/001_identity.sql`.
+* ✅ `UserResource` (`upsertBySpotifyId`) / `TokenResource` (`save`/`get`, Identity-private token store). `pg` driver + pool in `shared/db.ts`; first migration `db/init/001_identity.sql`.
 * ✅ `UserManager` — `beginLogin` / `handleCallback` (validates state → exchange → upsert → store → mint session) / `getFreshAccessToken` (server-side refresh on expiry).
 * ✅ Route handlers: `GET /api/auth/login`, `GET /api/auth/callback`, `POST /api/auth/logout`. Refresh is a `UserManager` method (no endpoint yet — no caller until Playlist; YAGNI).
 * ✅ Session cookie via `jose` (`shared/session.ts`): httpOnly, SameSite=Lax, payload = app user id. Cookie config in `shared/cookies.ts`. Dev server bound to `127.0.0.1` (`next dev -H 127.0.0.1`) so the browse origin matches the OAuth origin.
@@ -62,6 +63,26 @@ placed in `AuthEngine` rather than a Resource (ADR 0008).
 
 ---
 
+## Iteration 1.5 — Cross-subsystem foundation fix ✅ DONE
+
+Surfaced while kicking off Iteration 2: the planned cross-subsystem token path (Playlist
+reading Identity's token store / `SpotifyResource` calling `UserManager`) couldn't refresh
+an expired token and violated the lint boundaries. Adopted the iDesign **manager-resource**
+pattern instead — docs + ADRs + eslint only, **no production code rewrite**.
+
+- ✅ ADR 0009 — cross-subsystem access via a manager-resource (`<TargetManager>Resource`,
+  in the caller's subsystem, calling the callee's Manager). Supersedes the shared-token-store
+  rule. Token flow becomes `PlaylistManager → UserManagerResource → UserManager.getFreshAccessToken`
+  (adapter built in Iteration 3). `TokenResource` is now Identity-private.
+- ✅ ADR 0010 — iDesign applied at the architecture level; code stays idiomatic TypeScript
+  (factory functions, not mimicked-C# classes). No rewrite of existing components.
+- ✅ `eslint.config.mjs` — added the `manager-resource` element + call rules; retired the
+  `token-store` element (`TokenResource` reclassified as a plain Identity resource).
+- ✅ Doc sync: CLAUDE.md §4/§6, `src/server/README.md`, this roadmap.
+- **Done when:** lint passes under the new rules and the existing tests stay green (38). ✅
+
+---
+
 ## Iteration 2 — Sentence decomposition (Playlist, pure logic) ← NEXT
 
 The heart of the system (CLAUDE.md §3). Candidate generation is pure and independently
@@ -71,7 +92,13 @@ unit-testable; match validation talks to the music API; the backtracking loop li
 - Shared normalization utility: lowercase, strip punctuation/diacritics, strip version suffixes (parens/bracket/dash tails) — used by both engines (ADR 0003).
 - `SentenceEngine` — tokenise; generate multi-word candidate groupings in priority order; apply substitution map (to→2, you→U, for→4, are→R; one→1…ten→10; and→&; be→B/see→C/why→Y/oh→O/ex→X) (ADR 0003). **Pure, no external deps.**
 - `SpotifyEngine` — match-quality judgement: exact equality after normalization (ADR 0003).
-- `SpotifyResource` — Spotify search API access (reads access token from the shared token store). **First caller of `UserManager.getFreshAccessToken`** — add a per-user lock / `SELECT … FOR UPDATE` here to fix the latent concurrent-refresh race flagged in PR #7 review (two parallel refreshes can persist a rotated-out refresh token → later `invalid_grant`).
+- `SpotifyResource` — Spotify search API access. It needs a fresh access token, which it
+  gets (Iteration 3) via the `UserManagerResource` adapter → `UserManager.getFreshAccessToken`,
+  **not** by reading the token store and **not** by calling `UserManager` directly (ADR 0009;
+  lint forbids Resource→Manager). The concurrent-refresh race flagged in PR #7 (two parallel
+  refreshes persisting a rotated-out refresh token → later `invalid_grant`) is fixed inside
+  `UserManager.getFreshAccessToken` with a per-user lock / `SELECT … FOR UPDATE`, landing with
+  the adapter in Iteration 3. **For Iteration 2 the search is mocked** (pure decomposition core).
 - `PlaylistManager` — the backtracking orchestration loop: try candidate → validate → on failure backtrack and re-derive groupings for the remainder; give up = no playlist (ADR 0003 no-match behavior).
 - **Tests:** heavy unit coverage of SentenceEngine + normalization + backtracking; mocked search.
 - **Done when:** given a sentence, the loop returns an ordered set of matched tracks covering the whole sentence, or a list of unmatched phrases.
