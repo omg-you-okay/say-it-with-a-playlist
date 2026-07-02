@@ -139,6 +139,10 @@ describe("GET /api/auth/callback", () => {
       "auth_error=state_mismatch",
     );
     expect(response.cookies.get(SESSION_COOKIE)?.value).toBeFalsy();
+    // The one-shot state cookie is consumed on failure too.
+    const stateCookie = response.cookies.get(OAUTH_STATE_COOKIE);
+    expect(stateCookie?.value).toBe("");
+    expect(stateCookie?.maxAge).toBe(0);
   });
 
   it("redirects with an error when Spotify denies consent", async () => {
@@ -146,6 +150,7 @@ describe("GET /api/auth/callback", () => {
     expect(response.headers.get("location")).toContain(
       "auth_error=access_denied",
     );
+    expect(response.cookies.get(OAUTH_STATE_COOKIE)?.maxAge).toBe(0);
   });
 
   it("collapses an unknown/attacker-controlled error code to a fixed value", async () => {

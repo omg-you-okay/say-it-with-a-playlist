@@ -4,7 +4,11 @@ import {
   createUserManager,
   OAuthStateMismatchError,
 } from "@/server/identity/managers/UserManager";
-import { baseCookieOptions, OAUTH_STATE_COOKIE } from "@/server/shared/cookies";
+import {
+  baseCookieOptions,
+  expiredCookieOptions,
+  OAUTH_STATE_COOKIE,
+} from "@/server/shared/cookies";
 import { SESSION_COOKIE, SESSION_MAX_AGE } from "@/server/shared/session";
 
 // GET /api/auth/callback — Spotify redirects here after consent.
@@ -43,7 +47,11 @@ function redirectHome(request: NextRequest, authError?: string): NextResponse {
     request.nextUrl.protocol.replace(/:$/, "");
   const url = new URL("/", `${proto}://${host}`);
   if (authError) url.searchParams.set("auth_error", authError);
-  return NextResponse.redirect(url);
+  const response = NextResponse.redirect(url);
+  // The state cookie is one-shot: whatever the outcome, this callback consumes
+  // it, so success and every failure path clear it here.
+  response.cookies.set(OAUTH_STATE_COOKIE, "", expiredCookieOptions());
+  return response;
 }
 
 export async function GET(request: NextRequest) {
@@ -76,7 +84,6 @@ export async function GET(request: NextRequest) {
       ...baseCookieOptions(),
       maxAge: SESSION_MAX_AGE,
     });
-    response.cookies.delete(OAUTH_STATE_COOKIE);
     return response;
   } catch (error) {
     if (error instanceof OAuthStateMismatchError) {

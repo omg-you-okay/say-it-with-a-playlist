@@ -27,3 +27,12 @@ export function baseCookieOptions(): BaseCookieOptions {
     secure: process.env.NODE_ENV === "production",
   };
 }
+
+/**
+ * The one idiom for clearing a cookie: overwrite it with an immediately
+ * expiring value carrying the same attributes (path, secure) it was set with —
+ * a delete with mismatched attributes leaves the original cookie standing.
+ */
+export function expiredCookieOptions(): BaseCookieOptions & { maxAge: 0 } {
+  return { ...baseCookieOptions(), maxAge: 0 };
+}

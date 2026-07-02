@@ -1,9 +1,14 @@
 import { requireEnv } from "@/server/shared/env";
 import { createSessionToken } from "@/server/shared/session";
 
-import { createAuthEngine, type AuthEngine } from "../engines/AuthEngine";
+import {
+  createAuthEngine,
+  type AuthEngine,
+  type SpotifyTokenSet,
+} from "../engines/AuthEngine";
 import {
   createTokenResource,
+  type StoredTokens,
   type TokenResource,
 } from "../resources/TokenResource";
 import {
@@ -66,6 +71,19 @@ export class MissingTokensError extends Error {
   }
 }
 
+// The engine's token shape and the resource's stored shape are deliberately
+// separate types (ADR 0008). Map field-by-field so drift in either shape is a
+// compile error here, not a silent structural coincidence.
+function toStoredTokens(tokens: SpotifyTokenSet): StoredTokens {
+  return {
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    scope: tokens.scope,
+    tokenType: tokens.tokenType,
+    expiresAt: tokens.expiresAt,
+  };
+}
+
 export function makeUserManager(deps: UserManagerDeps): UserManager {
   const {
     authEngine,
@@ -97,7 +115,7 @@ export function makeUserManager(deps: UserManagerDeps): UserManager {
         displayName: profile.displayName,
         email: profile.email,
       });
-      await tokenResource.save(user.id, tokens);
+      await tokenResource.save(user.id, toStoredTokens(tokens));
 
       const sessionToken = await createSession(user.id);
       return { userId: user.id, sessionToken };
@@ -113,7 +131,7 @@ export function makeUserManager(deps: UserManagerDeps): UserManager {
       const refreshed = await authEngine.refreshAccessToken(
         stored.refreshToken,
       );
-      await tokenResource.save(userId, refreshed);
+      await tokenResource.save(userId, toStoredTokens(refreshed));
       return refreshed.accessToken;
     },
   };
