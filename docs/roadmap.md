@@ -73,7 +73,8 @@ the `manager-resource` element + call rules (retired `token-store`); docs synced
 
 The heart of the system (CLAUDE.md §3). Candidate generation is pure and independently
 unit-testable; match validation talks to the music API; the backtracking loop lives in
-`PlaylistManager`, not in either concern.
+`PlaylistManager`, not in either concern. Spotify HTTP = typed, hand-rolled `fetch` against
+the documented REST API — the official SDK was evaluated and rejected (ADR 0011).
 
 - Shared normalization utility: lowercase, strip punctuation/diacritics, strip version suffixes (parens/bracket/dash tails) — used by both engines (ADR 0003).
 - `SentenceEngine` — tokenise; generate multi-word candidate groupings in priority order; apply substitution map (to→2, you→U, for→4, are→R; one→1…ten→10; and→&; be→B/see→C/why→Y/oh→O/ex→X) (ADR 0003). **Pure, no external deps.**
@@ -94,7 +95,7 @@ unit-testable; match validation talks to the music API; the backtracking loop li
 
 ## Iteration 3 — Playlist creation
 
-- `SpotifyResource` / `SpotifyEngine` — create playlist on the user's account; add tracks in sentence order.
+- `SpotifyResource` / `SpotifyEngine` — create playlist on the user's account; add tracks in sentence order (REST via typed `fetch`, injected `fetchFn` — ADR 0011).
 - Playlist naming: the sentence itself, truncated to 100 chars; branding in the description (ADR 0003).
 - `PlaylistResource` — persist playlist history (sentence, tracks, link, timestamp) per user.
 - End-to-end `POST` generate endpoint: sentence in → decomposition → playlist created → link + tracks out.
