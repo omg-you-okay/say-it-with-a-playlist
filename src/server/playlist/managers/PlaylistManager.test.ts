@@ -225,11 +225,70 @@ describe("PlaylistManager.matchSentence", () => {
   });
 });
 
-describe("PlaylistManager.generatePlaylist", () => {
-  function makeGenerateDeps(catalog: Record<string, string[]>) {
+describe("PlaylistManager.previewSentence", () => {
+  function makePreviewDeps(catalog: Record<string, string[]>) {
     const searchTracks = vi.fn(async (_token: string, query: string) =>
       (catalog[query] ?? []).map(track),
     );
+    const getFreshAccessToken = vi.fn().mockResolvedValue("fresh-token");
+
+    const manager = makePlaylistManager({
+      sentenceEngine: createSentenceEngine(),
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: { searchTracks, ...unusedSpotifyWriteMethods },
+      userManagerResource: { getFreshAccessToken },
+      playlistResource: { save: vi.fn() },
+    });
+
+    return { manager, searchTracks, getFreshAccessToken };
+  }
+
+  it("acquires a fresh token and returns the matched tracks, creating nothing", async () => {
+    const deps = makePreviewDeps({
+      "i will": ["I Will"],
+      "always love you": ["Always Love You"],
+    });
+
+    const result = await deps.manager.previewSentence(
+      "user-1",
+      "I will always love you",
+    );
+
+    expect(deps.getFreshAccessToken).toHaveBeenCalledWith("user-1");
+    expect(deps.searchTracks).toHaveBeenCalledWith("fresh-token", "i will");
+    expect(result).toEqual({
+      ok: true,
+      tracks: [
+        { phrase: "i will", track: track("I Will") },
+        { phrase: "always love you", track: track("Always Love You") },
+      ],
+    });
+    expect(unusedSpotifyWriteMethods.createPlaylist).not.toHaveBeenCalled();
+    expect(unusedSpotifyWriteMethods.addTracks).not.toHaveBeenCalled();
+  });
+
+  it("reports unmatched phrases on a no-match sentence (ADR 0003)", async () => {
+    const deps = makePreviewDeps({});
+
+    const result = await deps.manager.previewSentence("user-1", "xyzzy");
+
+    expect(result).toEqual({ ok: false, unmatched: ["xyzzy"] });
+  });
+
+  it("propagates a token-acquisition failure without searching", async () => {
+    const deps = makePreviewDeps({ hello: ["Hello"] });
+    deps.getFreshAccessToken.mockRejectedValue(new Error("no tokens"));
+
+    await expect(
+      deps.manager.previewSentence("user-1", "hello"),
+    ).rejects.toThrow("no tokens");
+    expect(deps.searchTracks).not.toHaveBeenCalled();
+  });
+});
+
+describe("PlaylistManager.createFromTracks", () => {
+  function makeCreateDeps() {
+    const searchTracks = vi.fn();
     const getCurrentUserId = vi.fn().mockResolvedValue("spotify-user-1");
     const createPlaylist = vi.fn().mockResolvedValue({
       id: "playlist-1",
@@ -263,15 +322,19 @@ describe("PlaylistManager.generatePlaylist", () => {
     };
   }
 
-  it("creates a playlist, adds tracks in sentence order, and saves history", async () => {
-    const deps = makeGenerateDeps({
-      "i will": ["I Will"],
-      "always love you": ["Always Love You"],
-    });
+  const confirmedTracks = [
+    { phrase: "i will", track: track("I Will") },
+    { phrase: "always love you", track: track("Always Love You") },
+  ];
 
-    const result = await deps.manager.generatePlaylist(
+  it("creates a private playlist from the confirmed tracks, adds them in order, and saves history", async () => {
+    const deps = makeCreateDeps();
+
+    const result = await deps.manager.createFromTracks(
       "user-1",
       "I will always love you",
+      confirmedTracks,
+      false,
     );
 
     expect(deps.getFreshAccessToken).toHaveBeenCalledWith("user-1");
@@ -284,6 +347,7 @@ describe("PlaylistManager.generatePlaylist", () => {
         description:
           "Read the track titles in order — made with Say It With a Playlist",
       },
+      false,
     );
     expect(deps.addTracks).toHaveBeenCalledWith("fresh-token", "playlist-1", [
       "spotify:track:id-I Will",
@@ -313,31 +377,36 @@ describe("PlaylistManager.generatePlaylist", () => {
     expect(result).toEqual({
       ok: true,
       url: "https://open.spotify.com/playlist/1",
-      tracks: [
-        { phrase: "i will", track: track("I Will") },
-        { phrase: "always love you", track: track("Always Love You") },
-      ],
     });
+    // create trusts the client-confirmed tracks — no re-search (ADR 0012).
+    expect(deps.searchTracks).not.toHaveBeenCalled();
   });
 
-  it("creates nothing and saves nothing on a no-match sentence (ADR 0003)", async () => {
-    const deps = makeGenerateDeps({});
+  it("threads isPublic: true through to createPlaylist", async () => {
+    const deps = makeCreateDeps();
 
-    const result = await deps.manager.generatePlaylist("user-1", "xyzzy");
+    await deps.manager.createFromTracks(
+      "user-1",
+      "hello",
+      [{ phrase: "hello", track: track("Hello") }],
+      true,
+    );
 
-    expect(result).toEqual({ ok: false, unmatched: ["xyzzy"] });
-    expect(deps.createPlaylist).not.toHaveBeenCalled();
-    expect(deps.addTracks).not.toHaveBeenCalled();
-    expect(deps.save).not.toHaveBeenCalled();
+    expect(deps.createPlaylist).toHaveBeenCalledWith(
+      "fresh-token",
+      "spotify-user-1",
+      expect.any(Object),
+      true,
+    );
   });
 
-  it("propagates a token-acquisition failure without searching", async () => {
-    const deps = makeGenerateDeps({ hello: ["Hello"] });
+  it("propagates a token-acquisition failure without creating anything", async () => {
+    const deps = makeCreateDeps();
     deps.getFreshAccessToken.mockRejectedValue(new Error("no tokens"));
 
     await expect(
-      deps.manager.generatePlaylist("user-1", "hello"),
+      deps.manager.createFromTracks("user-1", "hello", confirmedTracks, false),
     ).rejects.toThrow("no tokens");
-    expect(deps.searchTracks).not.toHaveBeenCalled();
+    expect(deps.createPlaylist).not.toHaveBeenCalled();
   });
 });

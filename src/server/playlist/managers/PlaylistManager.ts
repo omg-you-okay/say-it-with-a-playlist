@@ -27,10 +27,14 @@ import {
 // (SentenceEngine) and match judgement (SpotifyEngine) hold the business
 // logic; search HTTP lives in SpotifyResource.
 //
-// generatePlaylist (Iteration 3) is the end-to-end use case: obtain a fresh
-// token via UserManagerResource (ADR 0009), run the match, and — only on a
-// full cover (ADR 0003: no partial playlists) — create the playlist, add
-// tracks in sentence order, and persist history.
+// Iteration 4 splits the former one-shot generatePlaylist into two use cases
+// (ADR 0012), so the frontend can show matched tracks before anything is
+// created:
+//   - previewSentence: fresh token (UserManagerResource, ADR 0009) → match →
+//     return tracks/unmatched. Nothing created, no history.
+//   - createFromTracks: build the playlist from client-confirmed tracks (the
+//     ones just previewed) + chosen visibility, add in sentence order, and
+//     persist history. No second Spotify search.
 
 export interface MatchedTrack {
   /** The sentence phrase (normalized words) this track spells. */
@@ -46,19 +50,28 @@ export type SentenceMatchResult =
       unmatched: string[];
     };
 
-export type GeneratePlaylistResult =
-  | { ok: true; url: string; tracks: MatchedTrack[] }
-  | { ok: false; unmatched: string[] };
+export type PreviewResult = SentenceMatchResult;
+
+export type CreatePlaylistResult = { ok: true; url: string };
 
 export interface PlaylistManager {
   matchSentence(
     accessToken: string,
     sentence: string,
   ): Promise<SentenceMatchResult>;
-  generatePlaylist(
+  /** Decompose + match only — creates nothing (Iteration 4 preview step). */
+  previewSentence(userId: string, sentence: string): Promise<PreviewResult>;
+  /**
+   * Build the playlist from client-confirmed tracks (the ones just
+   * previewed) at the chosen visibility, add them in sentence order, and
+   * persist history. Trusts the caller's track list rather than re-matching.
+   */
+  createFromTracks(
     userId: string,
     sentence: string,
-  ): Promise<GeneratePlaylistResult>;
+    tracks: MatchedTrack[],
+    isPublic: boolean,
+  ): Promise<CreatePlaylistResult>;
 }
 
 export interface PlaylistManagerDeps {
@@ -168,19 +181,31 @@ export function makePlaylistManager(
       : { ok: false, unmatched: deepestFailPhrases };
   }
 
+  function requireCrossSubsystemDeps(): {
+    userManagerResource: UserManagerResource;
+    playlistResource: PlaylistResource;
+  } {
+    if (!userManagerResource || !playlistResource) {
+      throw new Error(
+        "previewSentence/createFromTracks require userManagerResource and playlistResource",
+      );
+    }
+    return { userManagerResource, playlistResource };
+  }
+
   return {
     matchSentence,
 
-    async generatePlaylist(userId, sentence) {
-      if (!userManagerResource || !playlistResource) {
-        throw new Error(
-          "generatePlaylist requires userManagerResource and playlistResource",
-        );
-      }
-
+    async previewSentence(userId, sentence) {
+      const { userManagerResource } = requireCrossSubsystemDeps();
       const accessToken = await userManagerResource.getFreshAccessToken(userId);
-      const result = await matchSentence(accessToken, sentence);
-      if (!result.ok) return { ok: false, unmatched: result.unmatched };
+      return matchSentence(accessToken, sentence);
+    },
+
+    async createFromTracks(userId, sentence, tracks, isPublic) {
+      const { userManagerResource, playlistResource } =
+        requireCrossSubsystemDeps();
+      const accessToken = await userManagerResource.getFreshAccessToken(userId);
 
       const metadata = spotifyEngine.buildPlaylistMetadata(sentence);
       const spotifyUserId = await spotifyResource.getCurrentUserId(accessToken);
@@ -188,17 +213,18 @@ export function makePlaylistManager(
         accessToken,
         spotifyUserId,
         metadata,
+        isPublic,
       );
       await spotifyResource.addTracks(
         accessToken,
         playlist.id,
-        result.tracks.map(({ track }) => track.uri),
+        tracks.map(({ track }) => track.uri),
       );
       await playlistResource.save(userId, {
         sentence,
         spotifyPlaylistId: playlist.id,
         url: playlist.url,
-        tracks: result.tracks.map(({ phrase, track }) => ({
+        tracks: tracks.map(({ phrase, track }) => ({
           phrase,
           trackId: track.id,
           trackUri: track.uri,
@@ -207,7 +233,7 @@ export function makePlaylistManager(
         })),
       });
 
-      return { ok: true, url: playlist.url, tracks: result.tracks };
+      return { ok: true, url: playlist.url };
     },
   };
 }

@@ -196,6 +196,26 @@ describe("SpotifyResource.createPlaylist", () => {
     });
   });
 
+  it("sends public: true when isPublic is passed", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: "playlist-1", external_urls: {} }),
+        { status: 201 },
+      ),
+    );
+    const resource = createSpotifyResource({ fetchFn });
+
+    await resource.createPlaylist(
+      "token-123",
+      "user-1",
+      { name: "n", description: "d" },
+      true,
+    );
+
+    const req = fetchFn.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(req.body as string)).toMatchObject({ public: true });
+  });
+
   it("URL-encodes the Spotify user id", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ id: "p1", external_urls: {} }), {
