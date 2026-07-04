@@ -16,6 +16,7 @@ context never bleeds into another. Do this in order and stop at the first thing 
 - If the target is already done or ambiguous, **stop and ask** which iteration to start.
 
 ## 2. Load only the context this feature needs
+- **Load it inline — read the files yourself.** This repo is small; fanning out to Explore/search subagents just spins up cold workers that re-derive context you can read directly, and subagent-heavy sessions are a top usage driver. Reserve subagents for genuinely large search spaces, not this.
 - From the roadmap row: note the iDesign components to add, the "done when" criterion, and which ADRs it cites.
 - Read the cited ADRs in @docs/decisions/ and restate, in your own words, the **locked constraints that bind this feature** (e.g. Managers→Engines/Resources call direction, Engines never call Engines, the session-cookie decision, the matching/substitution/naming rules). Do **not** relitigate them.
 - If this iteration writes Next.js app code, heed @AGENTS.md (read the relevant guide under `node_modules/next/dist/docs/` before coding).
