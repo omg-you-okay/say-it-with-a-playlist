@@ -33,3 +33,9 @@ session is correct without inheriting this one's context. Extra context from the
 - Confirm tests/lint pass locally if applicable; report failures honestly.
 - Propose a `type(scope): description` PR title and a body (what / why, tests, "done when" met).
 - Then **ask** before pushing the branch and opening the PR into `main`.
+
+## 5. Hand off clean
+- Once the PR is up, tell the user: **the next iteration should start a fresh session — `/clear`
+  before the next `/kickoff`.** Long (>150k) sessions are the single biggest usage driver, and
+  everything durable from this one now lives in the roadmap/ADRs/memory — so Iteration N+1 has no
+  reason to pay to carry Iteration N's context.
