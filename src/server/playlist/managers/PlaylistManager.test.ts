@@ -18,6 +18,14 @@ function track(name: string): TrackCandidate {
   };
 }
 
+// matchSentence never calls these — they exist only to satisfy the
+// SpotifyResource type for tests that don't exercise generatePlaylist.
+const unusedSpotifyWriteMethods = {
+  getCurrentUserId: vi.fn(),
+  createPlaylist: vi.fn(),
+  addTracks: vi.fn(),
+};
+
 function makeManager(catalog: Record<string, string[]>) {
   const searchTracks = vi.fn(async (_token: string, query: string) =>
     (catalog[query] ?? []).map(track),
@@ -25,7 +33,7 @@ function makeManager(catalog: Record<string, string[]>) {
   const manager = makePlaylistManager({
     sentenceEngine: createSentenceEngine(),
     spotifyEngine: createSpotifyEngine(),
-    spotifyResource: { searchTracks },
+    spotifyResource: { searchTracks, ...unusedSpotifyWriteMethods },
   });
   return { manager, searchTracks };
 }
@@ -171,6 +179,7 @@ describe("PlaylistManager.matchSentence", () => {
       spotifyResource: {
         searchTracks: async (_token, query) =>
           (catalog[query] ?? []).map(track),
+        ...unusedSpotifyWriteMethods,
       },
     });
 
@@ -198,5 +207,137 @@ describe("PlaylistManager.matchSentence", () => {
 
     expect(result).toEqual({ ok: false, unmatched: [] });
     expect(searchTracks).not.toHaveBeenCalled();
+  });
+
+  it("stops searching once the search budget is exhausted and fails gracefully", async () => {
+    const searchTracks = vi.fn(async () => []);
+    const manager = makePlaylistManager({
+      sentenceEngine: createSentenceEngine(),
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: { searchTracks, ...unusedSpotifyWriteMethods },
+      maxSearches: 2,
+    });
+
+    const result = await manager.matchSentence("tok", "one two three");
+
+    expect(result.ok).toBe(false);
+    expect(searchTracks).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("PlaylistManager.generatePlaylist", () => {
+  function makeGenerateDeps(catalog: Record<string, string[]>) {
+    const searchTracks = vi.fn(async (_token: string, query: string) =>
+      (catalog[query] ?? []).map(track),
+    );
+    const getCurrentUserId = vi.fn().mockResolvedValue("spotify-user-1");
+    const createPlaylist = vi.fn().mockResolvedValue({
+      id: "playlist-1",
+      url: "https://open.spotify.com/playlist/1",
+    });
+    const addTracks = vi.fn().mockResolvedValue(undefined);
+    const getFreshAccessToken = vi.fn().mockResolvedValue("fresh-token");
+    const save = vi.fn().mockResolvedValue(undefined);
+
+    const manager = makePlaylistManager({
+      sentenceEngine: createSentenceEngine(),
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: {
+        searchTracks,
+        getCurrentUserId,
+        createPlaylist,
+        addTracks,
+      },
+      userManagerResource: { getFreshAccessToken },
+      playlistResource: { save },
+    });
+
+    return {
+      manager,
+      searchTracks,
+      getCurrentUserId,
+      createPlaylist,
+      addTracks,
+      getFreshAccessToken,
+      save,
+    };
+  }
+
+  it("creates a playlist, adds tracks in sentence order, and saves history", async () => {
+    const deps = makeGenerateDeps({
+      "i will": ["I Will"],
+      "always love you": ["Always Love You"],
+    });
+
+    const result = await deps.manager.generatePlaylist(
+      "user-1",
+      "I will always love you",
+    );
+
+    expect(deps.getFreshAccessToken).toHaveBeenCalledWith("user-1");
+    expect(deps.getCurrentUserId).toHaveBeenCalledWith("fresh-token");
+    expect(deps.createPlaylist).toHaveBeenCalledWith(
+      "fresh-token",
+      "spotify-user-1",
+      {
+        name: "I will always love you",
+        description:
+          "Read the track titles in order — made with Say It With a Playlist",
+      },
+    );
+    expect(deps.addTracks).toHaveBeenCalledWith("fresh-token", "playlist-1", [
+      "spotify:track:id-I Will",
+      "spotify:track:id-Always Love You",
+    ]);
+    expect(deps.save).toHaveBeenCalledWith("user-1", {
+      sentence: "I will always love you",
+      spotifyPlaylistId: "playlist-1",
+      url: "https://open.spotify.com/playlist/1",
+      tracks: [
+        {
+          phrase: "i will",
+          trackId: "id-I Will",
+          trackUri: "spotify:track:id-I Will",
+          trackName: "I Will",
+          artistNames: ["Artist"],
+        },
+        {
+          phrase: "always love you",
+          trackId: "id-Always Love You",
+          trackUri: "spotify:track:id-Always Love You",
+          trackName: "Always Love You",
+          artistNames: ["Artist"],
+        },
+      ],
+    });
+    expect(result).toEqual({
+      ok: true,
+      url: "https://open.spotify.com/playlist/1",
+      tracks: [
+        { phrase: "i will", track: track("I Will") },
+        { phrase: "always love you", track: track("Always Love You") },
+      ],
+    });
+  });
+
+  it("creates nothing and saves nothing on a no-match sentence (ADR 0003)", async () => {
+    const deps = makeGenerateDeps({});
+
+    const result = await deps.manager.generatePlaylist("user-1", "xyzzy");
+
+    expect(result).toEqual({ ok: false, unmatched: ["xyzzy"] });
+    expect(deps.createPlaylist).not.toHaveBeenCalled();
+    expect(deps.addTracks).not.toHaveBeenCalled();
+    expect(deps.save).not.toHaveBeenCalled();
+  });
+
+  it("propagates a token-acquisition failure without searching", async () => {
+    const deps = makeGenerateDeps({ hello: ["Hello"] });
+    deps.getFreshAccessToken.mockRejectedValue(new Error("no tokens"));
+
+    await expect(
+      deps.manager.generatePlaylist("user-1", "hello"),
+    ).rejects.toThrow("no tokens");
+    expect(deps.searchTracks).not.toHaveBeenCalled();
   });
 });

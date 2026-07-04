@@ -100,23 +100,61 @@ suffix is abandoned permanently; without it the search is exponential in sentenc
 
 ---
 
-## Iteration 3 — Playlist creation ← NEXT
+## Iteration 3 — Playlist creation ✅ DONE
 
-- `SpotifyResource` / `SpotifyEngine` — create playlist on the user's account; add tracks in sentence order (REST via typed `fetch`, injected `fetchFn` — ADR 0011).
-- Playlist naming: the sentence itself, truncated to 100 chars; branding in the description (ADR 0003).
-- `PlaylistResource` — persist playlist history (sentence, tracks, link, timestamp) per user.
-- End-to-end `POST` generate endpoint: sentence in → decomposition → playlist created → link + tracks out.
-- **Tests:** integration test for the generate endpoint.
-- **Done when:** one API call turns a sentence into a real Spotify playlist on the user's account and records history.
+Closed the loop from decomposition (Iteration 2, mocked search) to a live, end-to-end feature.
+Shipped: `SpotifyEngine.buildPlaylistMetadata` (name = sentence ≤100 chars, fixed branding
+description, ADR 0003); `SpotifyResource` gained `getCurrentUserId` (`GET /v1/me`),
+`createPlaylist`, `addTracks`, plus a shared `spotifyFetch` with 429/Retry-After retry-once
+handling (closes the Iteration 2 follow-up); `UserManagerResource` — the ADR 0009 cross-subsystem
+adapter (`playlist/resources/` → `UserManager.getFreshAccessToken`); `PlaylistResource` +
+`db/init/002_playlist.sql` (history: sentence, tracks JSONB, spotify playlist id, url, timestamp;
+own storage-shape type rather than importing the Manager's `MatchedTrack`, mirroring the
+`TokenResource`/`AuthEngine` separation, ADR 0008); `PlaylistManager.generatePlaylist` — token →
+match → create playlist → add tracks in sentence order → save history, plus a per-request search
+budget (`maxSearches`, default 100, injectable) so one request can't hammer Spotify unboundedly;
+`createPlaylistManager()` factory; `POST /api/playlists/generate` (401 no session, 400 blank
+sentence, 422 no-match with `unmatched` phrases and nothing created, 200 `{ url, tracks }`). 20 new
+tests → suite 133 (engine/resource/manager-resource/manager units + a real-Postgres endpoint
+integration test). Verified live against a real Spotify account: a full-cover sentence created a
+real playlist and one history row; a no-cover sentence returned 422 with no playlist and no row.
+
+- **Decision (not ADR-worthy — resource-internal, cheap to change per ADR 0011):** the Spotify
+  user id needed for `POST /v1/users/{id}/playlists` is resolved via `GET /v1/me` on the fly
+  rather than widening Identity's `UserManagerResource` contract — keeps Playlist ignorant of
+  Identity's schema at the cost of one extra call per generate.
+- **No new ADR needed:** every other choice this iteration (retry-once policy, search budget
+  value, storage-shape separation) is Resource/Manager-internal and already covered by ADRs
+  0008/0009/0011 — nothing architectural was relitigated or newly locked.
+- **Deferred → follow-up PR:** the concurrent-refresh race fix (`SELECT … FOR UPDATE` /
+  per-user lock in `UserManager.getFreshAccessToken`), owed since Iteration 2 — the single-user
+  MVP doesn't hit concurrent generates yet, so it stayed out to keep this PR focused.
+- **Deferred → ADR 0011 follow-up:** graceful re-auth when a refresh token has expired
+  (`invalid_grant`) — currently surfaces as a generic 401/500, not a "log in again" UX.
+- **Review follow-up → orphaned playlist on partial failure:** `generatePlaylist` does
+  `createPlaylist → addTracks → save` with no compensation; if `addTracks`/`save` throws, an
+  empty playlist is left on the user's account and a retry creates another. Acceptable for the
+  single-user MVP; revisit (cleanup/compensation or create-last ordering) if it bites.
+- **Review follow-up → >100-track cap:** `addTracks` is documented ≤100 URIs but
+  `generatePlaylist` passes the matched URIs unguarded; a 100+-word sentence would 400 after the
+  playlist is already created. Add a guard (or chunk into ≤100 batches) when long sentences matter.
+- **Done when:** one API call turns a sentence into a real Spotify playlist on the user's account and records history. ✅ (live-verified)
 
 ---
 
-## Iteration 4 — Frontend
+## Iteration 4 — Frontend ← NEXT
 
 - "Log in with Spotify" button; OAuth callback handling in the UI.
 - Sentence input; submit → call generate endpoint.
 - Result display (tracks + shareable playlist link); loading and error states (incl. the no-match unmatched-phrases response).
 - shadcn/ui components (MCP already in `.mcp.json`).
+- **Preview-then-create flow (owner request, 2026-07-04):** the UX should first show the
+  matched tracks so the user can decide they like the result, _then_ a "Create playlist" button —
+  with a **private/public toggle** at that point. This likely splits the current single-shot
+  `POST /api/playlists/generate` into a **match/preview** step (decompose only, no playlist
+  created) and a **create** step (build the playlist from the confirmed tracks + chosen
+  visibility). Resolves the deferred `public:false`-vs-"shareable link" question from Iteration 3's
+  review — visibility becomes a user choice rather than a hard-coded default.
 - **Done when:** a user completes the whole flow in the browser without touching the API directly.
 
 ---
