@@ -7,6 +7,13 @@ You are **wrapping up** the current feature session. The goal: move everything d
 this session's transient context and INTO the version-controlled substrate, so the next fresh
 session is correct without inheriting this one's context. Extra context from the user: `$ARGUMENTS`
 
+## 0. Model checkpoint — review stage
+- This wrap runs a `/code-review` (step 3); recommended: **Opus 4.8, effort high**
+  (better bug recall than Sonnet, and the review is short so the cost delta is small).
+- State which model is currently powering you. If it doesn't match, ask the user to
+  switch via `/model` and **wait for their confirmation** before proceeding. The doc
+  write-back steps (1–2) are fine on Sonnet, but do not start step 3's review below Opus.
+
 ## 1. Review what actually changed
 - Run `git status`, `git diff --stat main...HEAD`, and `git log --oneline main..HEAD`.
 - Summarize what this feature delivered, measured against its roadmap "done when".
