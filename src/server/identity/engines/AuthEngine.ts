@@ -12,6 +12,10 @@ const AUTHORIZE_URL = "https://accounts.spotify.com/authorize";
 const TOKEN_URL = "https://accounts.spotify.com/api/token";
 const PROFILE_URL = "https://api.spotify.com/v1/me";
 
+// Node's fetch has no practical default timeout; without one a hung Spotify
+// call hangs the whole callback request.
+const REQUEST_TIMEOUT_MS = 10_000;
+
 // Scopes: read the profile (id/email) to key the user record, plus the
 // playlist-write scopes the app exists to use — requested now so the user does
 // not have to re-consent when playlist creation lands (Iteration 3).
@@ -104,6 +108,7 @@ export function createAuthEngine(config: AuthEngineConfig): AuthEngine {
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams(params).toString(),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
@@ -152,6 +157,7 @@ export function createAuthEngine(config: AuthEngineConfig): AuthEngine {
     async fetchProfile(accessToken: string) {
       const res = await fetchFn(PROFILE_URL, {
         headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!res.ok) {
         const detail = await res.text().catch(() => "");

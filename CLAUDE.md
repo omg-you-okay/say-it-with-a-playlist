@@ -32,9 +32,9 @@ This is the core technical challenge and the most important logic to get right. 
 
 - **Tokenisation:** split the sentence into words
 - **Multi-word groupings:** candidate phrases can span multiple consecutive words ("Always Love You" as one track), generated in a defined priority order
-- **Substitutions:** apply character/word substitutions when matching (known examples: to→2, you→U, for→4, are→R; the full list is an open decision — see §8)
+- **Substitutions:** apply character/word substitutions when matching (known examples: to→2, you→U, for→4, are→R; the full list is locked in ADR 0003 — see §8)
 - **Backtracking:** if a grouping can't be matched to a real track, abandon it, try the next candidate grouping, and re-derive the groupings for the remainder of the sentence. The search continues until the full sentence is covered or all candidates are exhausted
-- **Match quality:** a search result counts only if the track title is a "good enough" match for the phrase (exactness rules are an open decision — see §8)
+- **Match quality:** a search result counts only if the track title is a "good enough" match for the phrase (exactness rules locked in ADR 0003 — see §8)
 
 **Critical separation of concerns (locked decision):**
 
@@ -62,7 +62,7 @@ The project follows the **iDesign methodology** — decomposition by volatility,
    - Managers call Engines and Resources
    - **Engines never call other Engines**
    - Layers are never collapsed or skipped for convenience
-   - Managers do not call Managers directly. When one subsystem needs something from another, the caller's subsystem owns a **manager-resource** — a Resource whose "external system" is the other subsystem's **Manager** (its public front door). It is named after the target manager (`<TargetManager>Resource`) and is the one sanctioned cross-subsystem touchpoint (ADR 0009). Specifically: the Playlist subsystem obtains a *fresh* access token via a `UserManagerResource` that calls `UserManager.getFreshAccessToken` — it does **not** read Identity's token store directly (a raw read can't refresh an expired token)
+   - Managers do not call Managers directly. When one subsystem needs something from another, the caller's subsystem owns a **manager-resource** — a Resource whose "external system" is the other subsystem's **Manager** (its public front door). It is named after the target manager (`<TargetManager>Resource`) and is the one sanctioned cross-subsystem touchpoint (ADR 0009). Specifically: the Playlist subsystem obtains a _fresh_ access token via a `UserManagerResource` that calls `UserManager.getFreshAccessToken` — it does **not** read Identity's token store directly (a raw read can't refresh an expired token)
 
 4. **Component inventory (names are part of the shared vocabulary):**
    - Identity: UserManager, AuthEngine, UserEngine, UserResource, TokenResource (Identity-private)
@@ -76,7 +76,7 @@ The project follows the **iDesign methodology** — decomposition by volatility,
 - Spotify **OAuth 2.0 Authorization Code Flow** — required because the app performs delegated actions (creating playlists) on the user's account and needs refresh capability
 - **The backend holds all tokens.** Access and refresh tokens never reach the frontend
 - Token refresh is handled server-side
-- How the frontend knows the user is logged in (session cookie vs app-issued token) is an **open decision** that must be made before backend auth work begins (see §8)
+- How the frontend knows the user is logged in: **decided** — httpOnly signed session cookie (ADR 0002, see §8)
 - API credentials/secrets live in environment configuration, never in source
 
 ---
@@ -105,15 +105,15 @@ This is as important as the code itself; the project deliberately practices prof
 
 ---
 
-## 8. Open Decisions (do not assume — these need explicit answers)
+## 8. Formerly Open Decisions (all resolved — answers live in ADRs; do not re-decide)
 
-| Question                                                                                                       | Needed before       |
-| -------------------------------------------------------------------------------------------------------------- | ------------------- |
-| What counts as a "good enough" track-title match (exact? case-insensitive? partial?)                           | Decomposition logic |
-| Behaviour when no match exists after exhausting all options (partial playlist? error? user picks replacement?) | Decomposition logic |
-| Frontend session strategy after OAuth (session cookie vs app-issued token)                                     | Backend auth work   |
-| Full, agreed list of substitution rules                                                                        | Decomposition logic |
-| Auto-generated playlist naming convention                                                                      | Playlist creation   |
+| Question                                  | Resolved in                                                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------------- |
+| "Good enough" track-title match           | ADR 0003 — exact equality after normalization                                |
+| Behaviour when no match exists            | ADR 0003 — no playlist created; response lists the unmatched words/phrases   |
+| Frontend session strategy after OAuth     | ADR 0002 — httpOnly, SameSite=Lax signed JWT cookie; payload = app user id   |
+| Full, agreed list of substitution rules   | ADR 0003 — config-driven map in SentenceEngine (to→2, you→U, one→1…, and→&…) |
+| Auto-generated playlist naming convention | ADR 0003 — the sentence itself (≤100 chars); branding in the description     |
 
 ---
 

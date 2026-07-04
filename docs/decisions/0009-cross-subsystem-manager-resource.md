@@ -32,7 +32,7 @@ layer, business logic depends on it, and only it knows the other subsystem exist
   filename and classified as its own element type in lint.
 - **Allowed calls (lint):** a manager-resource may call a Manager in any subsystem (and
   `shared/`); same-subsystem Managers and Engines may call it like any Resource.
-- **For the token case specifically:** Playlist gets a *fresh* token via
+- **For the token case specifically:** Playlist gets a _fresh_ token via
   `playlist/resources/UserManagerResource.ts` → `UserManager.getFreshAccessToken(userId)`.
   Flow: `PlaylistManager → UserManagerResource → UserManager`. `TokenResource` goes back to
   being **Identity-private** — it is no longer a shared cross-subsystem store.

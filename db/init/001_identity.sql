@@ -2,9 +2,10 @@
 --
 -- Two tables:
 --   users          — app-side user record, one per Spotify account.
---   spotify_tokens — the shared token store: written by the Identity subsystem,
---                    read by the Playlist subsystem later (the one sanctioned
---                    cross-subsystem touchpoint). Exactly one row per user.
+--   spotify_tokens — Identity-private token store (ADR 0009): only Identity's
+--                    TokenResource touches it. Playlist obtains a fresh token
+--                    via UserManagerResource → UserManager.getFreshAccessToken,
+--                    never by reading this table. Exactly one row per user.
 --
 -- Spotify access/refresh tokens live here, server-side only — they never reach
 -- the frontend (locked decision, brief §5 / ADR 0002).
