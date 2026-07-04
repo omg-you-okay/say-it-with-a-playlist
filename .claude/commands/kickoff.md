@@ -6,6 +6,10 @@ argument-hint: "[iteration number or feature name; omit to use the next unfinish
 You are starting a **new feature session**. Keep it scoped to exactly one feature so its
 context never bleeds into another. Do this in order and stop at the first thing that looks wrong.
 
+## 0. Model checkpoint — planning stage
+- Recommended for planning: **Opus 4.8, effort high** (planning quality compounds; Sonnet/Haiku are too light for this stage, Fable 5 is fine but usually overkill).
+- State which model is currently powering you. If it doesn't match the recommendation, ask the user to switch via `/model` and **wait for their confirmation** (switched, or "stay") before continuing.
+
 ## 1. Pick the target iteration
 - Read @docs/roadmap.md.
 - Target = `$ARGUMENTS`. If empty, choose the first iteration whose status is not `✅ DONE`.
@@ -24,3 +28,9 @@ context never bleeds into another. Do this in order and stop at the first thing 
 ## 4. Plan before code
 - Enter plan mode. Produce a step-by-step plan for **this iteration only**: components to add (respecting the three layers), the tests written alongside each (auth/core logic non-negotiable), and the endpoint or behaviour that satisfies "done when".
 - Do not edit files until the plan is approved.
+
+## 5. Model checkpoint — implementation stage
+- After the plan is approved and **before editing any file**, pause and tell the user:
+  switch to **Sonnet 5, effort high** for implementation (`/model`). Escalate back to
+  Opus 4.8 only if the work hits a genuinely hard bug or design knot mid-implementation.
+- Wait for their confirmation (switched, or "stay") before writing code.
