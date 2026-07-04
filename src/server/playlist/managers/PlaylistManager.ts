@@ -1,13 +1,6 @@
+import { type SentenceEngine } from "../engines/SentenceEngine";
+import { type SpotifyEngine } from "../engines/SpotifyEngine";
 import {
-  createSentenceEngine,
-  type SentenceEngine,
-} from "../engines/SentenceEngine";
-import {
-  createSpotifyEngine,
-  type SpotifyEngine,
-} from "../engines/SpotifyEngine";
-import {
-  createSpotifyResource,
   type SpotifyResource,
   type TrackCandidate,
 } from "../resources/SpotifyResource";
@@ -97,10 +90,17 @@ export function makePlaylistManager(
         return match;
       }
 
+      // A suffix that could not be covered once can never be covered — the
+      // outcome of cover(i) depends only on i. Without this, backtracking
+      // re-explores the same failing suffix once per path that reaches it
+      // (exponential in sentence length, even with searches memoized).
+      const deadEnds = new Set<number>();
+
       // Depth-first over word positions: cover the words from `index` on, or
       // return null so the caller backtracks to its next candidate.
       async function cover(index: number): Promise<MatchedTrack[] | null> {
         if (index === words.length) return [];
+        if (deadEnds.has(index)) return null;
 
         for (const candidate of sentenceEngine.candidatesAt(words, index)) {
           let match: TrackCandidate | null = null;
@@ -116,6 +116,7 @@ export function makePlaylistManager(
           if (rest)
             return [{ phrase: candidate.phrase, track: match }, ...rest];
         }
+        deadEnds.add(index);
         return null;
       }
 
@@ -125,13 +126,4 @@ export function makePlaylistManager(
         : { ok: false, unmatched: deepestFailPhrases };
     },
   };
-}
-
-/** Wire a PlaylistManager with the real engines and Spotify search. */
-export function createPlaylistManager(): PlaylistManager {
-  return makePlaylistManager({
-    sentenceEngine: createSentenceEngine(),
-    spotifyEngine: createSpotifyEngine(),
-    spotifyResource: createSpotifyResource(),
-  });
 }

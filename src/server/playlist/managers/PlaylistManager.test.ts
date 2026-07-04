@@ -154,6 +154,35 @@ describe("PlaylistManager.matchSentence", () => {
     expect(starSearches).toHaveLength(1);
   });
 
+  it("abandons a failed suffix permanently instead of re-exploring it", async () => {
+    // Both the [sun moon] and [sun][moon] paths reach position 2; the second
+    // arrival must hit the dead-end memo, not re-derive candidates (that
+    // re-exploration is exponential in sentence length).
+    const sentenceEngine = createSentenceEngine();
+    const candidatesAt = vi.fn(sentenceEngine.candidatesAt);
+    const catalog: Record<string, string[]> = {
+      sun: ["Sun"],
+      moon: ["Moon"],
+      "sun moon": ["Sun Moon"],
+    };
+    const manager = makePlaylistManager({
+      sentenceEngine: { ...sentenceEngine, candidatesAt },
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: {
+        searchTracks: async (_token, query) =>
+          (catalog[query] ?? []).map(track),
+      },
+    });
+
+    const result = await manager.matchSentence("tok", "sun moon star");
+
+    expect(result.ok).toBe(false);
+    const callsAtStar = candidatesAt.mock.calls.filter(
+      ([, index]) => index === 2,
+    );
+    expect(callsAtStar).toHaveLength(1);
+  });
+
   it("passes the access token through to the search", async () => {
     const { manager, searchTracks } = makeManager({ hello: ["Hello"] });
 

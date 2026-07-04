@@ -23,6 +23,16 @@ describe("SentenceEngine.tokenize", () => {
   it("keeps apostrophized words whole", () => {
     expect(engine.tokenize("don't stop")).toEqual(["dont", "stop"]);
   });
+
+  it("keeps every word — no title-style tail stripping on sentences", () => {
+    expect(engine.tokenize("call me (maybe)")).toEqual(["call", "me", "maybe"]);
+    expect(engine.tokenize("wait - for me now")).toEqual([
+      "wait",
+      "for",
+      "me",
+      "now",
+    ]);
+  });
 });
 
 describe("SentenceEngine.candidatesAt", () => {

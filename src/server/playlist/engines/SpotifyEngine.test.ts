@@ -57,6 +57,14 @@ describe("SpotifyEngine.findMatch", () => {
   });
 
   it("never matches a phrase that normalizes to nothing", () => {
-    expect(engine.findMatch("(live)", [track("[Live]")])).toBeUndefined();
+    expect(engine.findMatch("!!!", [track("[Live]")])).toBeUndefined();
+  });
+
+  it("strips version tails from the title side only", () => {
+    // The phrase keeps its words; only the track title loses "(Live)".
+    const hit = engine.findMatch("call me maybe", [track("Call Me (Live)")]);
+    expect(hit).toBeUndefined();
+    const exact = engine.findMatch("call me", [track("Call Me (Live)")]);
+    expect(exact?.name).toBe("Call Me (Live)");
   });
 });
