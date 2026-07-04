@@ -11,37 +11,29 @@ import {
 
 import { createTokenResource } from "@/server/identity/resources/TokenResource";
 import { createUserResource } from "@/server/identity/resources/UserResource";
+import type { MatchedTrack } from "@/server/playlist/managers/PlaylistManager";
 import { assertDisposableTestDb, getPool } from "@/server/shared/db";
 import { createSessionToken, SESSION_COOKIE } from "@/server/shared/session";
 
-import { POST as generate } from "./route";
+import { POST as create } from "./route";
 
-// Integration test exercising the generate route handler end to end: real
+// Integration test exercising the create route handler end to end: real
 // session signing, real Postgres, with only the Spotify HTTP boundary
-// stubbed (same pattern as auth-routes.integration.test.ts).
+// stubbed. Create trusts the client-confirmed tracks (ADR 0012) — it never
+// searches, only calls /me, creates the playlist, and adds tracks.
 
-const SEARCH_URL = "https://api.spotify.com/v1/search";
 const ME_URL = "https://api.spotify.com/v1/me";
 
-/** Stub global fetch: `catalog` maps a search query to the track titles it returns. */
-function stubSpotify(catalog: Record<string, string[]>) {
+function stubSpotify() {
+  const createPlaylistCalls: unknown[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.startsWith(SEARCH_URL)) {
-        const q = new URL(url).searchParams.get("q") ?? "";
-        const items = (catalog[q] ?? []).map((name, i) => ({
-          id: `id-${q}-${i}`,
-          uri: `spotify:track:id-${q}-${i}`,
-          name,
-          artists: [{ name: "Artist" }],
-        }));
-        return jsonResponse({ tracks: { items } });
-      }
       if (url === ME_URL) {
         return jsonResponse({ id: "spotify-user-1" });
       }
       if (/\/v1\/users\/[^/]+\/playlists$/.test(url)) {
+        createPlaylistCalls.push(JSON.parse(init?.body as string));
         return jsonResponse(
           {
             id: "playlist-1",
@@ -56,6 +48,7 @@ function stubSpotify(catalog: Record<string, string[]>) {
       throw new Error(`unexpected fetch to ${url} (${init?.method ?? "GET"})`);
     }),
   );
+  return createPlaylistCalls;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -103,39 +96,47 @@ async function seedLoggedInUser() {
   return { user, sessionToken };
 }
 
-function generateRequest(sessionToken: string | undefined, sentence: unknown) {
+const helloTrack: MatchedTrack = {
+  phrase: "hello",
+  track: {
+    id: "id-hello",
+    uri: "spotify:track:id-hello",
+    name: "Hello",
+    artistNames: ["Artist"],
+  },
+};
+
+function createRequest(
+  sessionToken: string | undefined,
+  body: Record<string, unknown>,
+) {
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
   if (sessionToken) headers.cookie = `${SESSION_COOKIE}=${sessionToken}`;
-  return new NextRequest("http://127.0.0.1:3000/api/playlists/generate", {
+  return new NextRequest("http://127.0.0.1:3000/api/playlists/create", {
     method: "POST",
     headers,
-    body: JSON.stringify({ sentence }),
+    body: JSON.stringify(body),
   });
 }
 
-describe("POST /api/playlists/generate", () => {
-  it("creates a playlist, adds tracks in order, and records history", async () => {
-    stubSpotify({ hello: ["Hello"] });
+describe("POST /api/playlists/create", () => {
+  it("creates a private playlist from the confirmed tracks and records history", async () => {
+    stubSpotify();
     const { user, sessionToken } = await seedLoggedInUser();
 
-    const response = await generate(generateRequest(sessionToken, "Hello!"));
+    const response = await create(
+      createRequest(sessionToken, {
+        sentence: "Hello!",
+        tracks: [helloTrack],
+        public: false,
+      }),
+    );
 
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.url).toBe("https://open.spotify.com/playlist/1");
-    expect(body.tracks).toEqual([
-      {
-        phrase: "hello",
-        track: {
-          id: "id-hello-0",
-          uri: "spotify:track:id-hello-0",
-          name: "Hello",
-          artistNames: ["Artist"],
-        },
-      },
-    ]);
 
     const { rows } = await getPool().query(
       "SELECT sentence, spotify_playlist_id, url FROM playlists WHERE user_id = $1",
@@ -149,34 +150,91 @@ describe("POST /api/playlists/generate", () => {
     });
   });
 
+  it("threads public: true to the Spotify create-playlist call", async () => {
+    const createPlaylistCalls = stubSpotify();
+    const { sessionToken } = await seedLoggedInUser();
+
+    const response = await create(
+      createRequest(sessionToken, {
+        sentence: "Hello!",
+        tracks: [helloTrack],
+        public: true,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(createPlaylistCalls).toEqual([
+      expect.objectContaining({ public: true }),
+    ]);
+  });
+
   it("returns 401 without a session", async () => {
-    stubSpotify({});
-    const response = await generate(generateRequest(undefined, "hello"));
+    stubSpotify();
+    const response = await create(
+      createRequest(undefined, {
+        sentence: "hello",
+        tracks: [helloTrack],
+        public: false,
+      }),
+    );
     expect(response.status).toBe(401);
   });
 
-  it("returns 422 and creates nothing on a no-match sentence", async () => {
-    stubSpotify({});
-    const { user, sessionToken } = await seedLoggedInUser();
-
-    const response = await generate(generateRequest(sessionToken, "xyzzy"));
-
-    expect(response.status).toBe(422);
-    const body = await response.json();
-    expect(body.unmatched).toEqual(["xyzzy"]);
-
-    const { rows } = await getPool().query(
-      "SELECT 1 FROM playlists WHERE user_id = $1",
-      [user.id],
-    );
-    expect(rows).toHaveLength(0);
-  });
-
   it("returns 400 for a blank sentence", async () => {
-    stubSpotify({});
+    stubSpotify();
     const { sessionToken } = await seedLoggedInUser();
 
-    const response = await generate(generateRequest(sessionToken, "   "));
+    const response = await create(
+      createRequest(sessionToken, {
+        sentence: "   ",
+        tracks: [helloTrack],
+        public: false,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 400 for an empty tracks list", async () => {
+    stubSpotify();
+    const { sessionToken } = await seedLoggedInUser();
+
+    const response = await create(
+      createRequest(sessionToken, {
+        sentence: "hello",
+        tracks: [],
+        public: false,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 400 for a malformed track shape", async () => {
+    stubSpotify();
+    const { sessionToken } = await seedLoggedInUser();
+
+    const response = await create(
+      createRequest(sessionToken, {
+        sentence: "hello",
+        tracks: [{ phrase: "hello" }],
+        public: false,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 400 when visibility is missing", async () => {
+    stubSpotify();
+    const { sessionToken } = await seedLoggedInUser();
+
+    const response = await create(
+      createRequest(sessionToken, {
+        sentence: "hello",
+        tracks: [helloTrack],
+      }),
+    );
 
     expect(response.status).toBe(400);
   });

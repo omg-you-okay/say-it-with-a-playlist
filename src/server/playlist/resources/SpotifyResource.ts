@@ -79,6 +79,7 @@ export interface SpotifyResource {
     accessToken: string,
     spotifyUserId: string,
     metadata: PlaylistMetadataInput,
+    isPublic?: boolean,
   ): Promise<CreatedPlaylist>;
   /** Adds tracks in the given order. Callers must keep `uris` at or under Spotify's 100-per-call cap. */
   addTracks(
@@ -156,14 +157,19 @@ export function createSpotifyResource(
       return body.id;
     },
 
-    async createPlaylist(accessToken, spotifyUserId, metadata) {
+    async createPlaylist(
+      accessToken,
+      spotifyUserId,
+      metadata,
+      isPublic = false,
+    ) {
       const res = await spotifyFetch(playlistsUrl(spotifyUserId), accessToken, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: metadata.name,
           description: metadata.description,
-          public: false,
+          public: isPublic,
         }),
       });
       const body = (await res.json()) as SpotifyPlaylistResponse;

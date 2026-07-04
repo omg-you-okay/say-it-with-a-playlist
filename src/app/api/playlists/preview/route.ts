@@ -4,10 +4,10 @@ import { MissingTokensError } from "@/server/identity/managers/UserManager";
 import { createPlaylistManager } from "@/server/playlist/managers/PlaylistManager";
 import { readSessionToken, SESSION_COOKIE } from "@/server/shared/session";
 
-// POST /api/playlists/generate — the end-to-end use case (brief §2 steps
-// 3-7): sentence in, decomposition, playlist created on the user's Spotify
-// account, link + tracks out, history recorded. No-match sentences report
-// the unmatched phrases and create nothing (ADR 0003).
+// POST /api/playlists/preview — the decompose-and-match step of the Iteration
+// 4 preview-then-create flow (ADR 0012): matches the sentence to real Spotify
+// tracks but creates nothing. The frontend shows the result and lets the user
+// confirm before POSTing the same tracks to /api/playlists/create.
 
 export async function POST(request: NextRequest) {
   const userId = await readSessionToken(
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await createPlaylistManager().generatePlaylist(
+    const result = await createPlaylistManager().previewSentence(
       userId,
       sentence,
     );
@@ -38,12 +38,12 @@ export async function POST(request: NextRequest) {
         { status: 422 },
       );
     }
-    return NextResponse.json({ url: result.url, tracks: result.tracks });
+    return NextResponse.json({ tracks: result.tracks });
   } catch (error) {
     if (error instanceof MissingTokensError) {
       return NextResponse.json({ error: "login_required" }, { status: 401 });
     }
-    console.error("Playlist generation failed", error);
-    return NextResponse.json({ error: "generate_failed" }, { status: 500 });
+    console.error("Playlist preview failed", error);
+    return NextResponse.json({ error: "preview_failed" }, { status: 500 });
   }
 }
