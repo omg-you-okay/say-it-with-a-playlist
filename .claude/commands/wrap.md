@@ -14,6 +14,7 @@ session is correct without inheriting this one's context. Extra context from the
 ## 2. Write back project knowledge (the whole point)
 - **Roadmap:** update @docs/roadmap.md — set this iteration's status (`✅ DONE`, or note precisely what remains). It stays the single source of truth.
 - **Decisions:** if any architectural choice was made or changed, create the next-numbered ADR in @docs/decisions/ (context · decision · alternatives · consequences). If none, say so explicitly — don't invent one.
+- **Doc sync:** if anything decided this session invalidates a claim in @CLAUDE.md or `src/server/README.md` (locked rules, component inventory, the §8 table), update those files now — they load into every fresh session and must never contradict the ADRs.
 - **Memory:** update the project memory note `project-status-iterations.md` to a one-line current-status + next-step **pointer** (do not duplicate the full roadmap into memory).
 
 ## 3. Review the branch before it leaves the session

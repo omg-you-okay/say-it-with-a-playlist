@@ -117,9 +117,9 @@ This is as important as the code itself; the project deliberately practices prof
 
 ---
 
-## 9. Phase Plan (high level)
+## 9. Phase Plan (high level — scope only; live status per phase is in `docs/roadmap.md`)
 
-0. **Foundations** _(in progress)_ — repo, branching, CI, containerised local dev environment (API + database + reverse proxy), workspace/solution scaffolding with the subsystem folder structure
+0. **Foundations** — repo, branching, CI, containerised local dev environment (API + database + reverse proxy), workspace/solution scaffolding with the subsystem folder structure
 1. **OAuth (Identity subsystem)** — full login round-trip: OAuth URL construction, callback handling, token exchange and storage, refresh logic, login/callback/refresh endpoints
 2. **Sentence decomposition (Playlist subsystem, pure logic)** — tokenisation, candidate grouping generation, substitutions, match-quality rule, search integration, the backtracking orchestration loop; heavily unit-tested
 3. **Playlist creation** — create playlist, add tracks, persist history, end-to-end generate endpoint
