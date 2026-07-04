@@ -68,3 +68,25 @@ describe("SpotifyEngine.findMatch", () => {
     expect(exact?.name).toBe("Call Me (Live)");
   });
 });
+
+describe("SpotifyEngine.buildPlaylistMetadata", () => {
+  it("uses the sentence as the name and the fixed branding description", () => {
+    const meta = engine.buildPlaylistMetadata("I will always love you");
+    expect(meta.name).toBe("I will always love you");
+    expect(meta.description).toBe(
+      "Read the track titles in order — made with Say It With a Playlist",
+    );
+  });
+
+  it("truncates the name to Spotify's 100-char limit", () => {
+    const sentence = "a".repeat(150);
+    const meta = engine.buildPlaylistMetadata(sentence);
+    expect(meta.name).toHaveLength(100);
+    expect(meta.name).toBe("a".repeat(100));
+  });
+
+  it("passes a name exactly at the limit through unchanged", () => {
+    const sentence = "a".repeat(100);
+    expect(engine.buildPlaylistMetadata(sentence).name).toBe(sentence);
+  });
+});

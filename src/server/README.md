@@ -6,8 +6,8 @@ Two strictly separated logical subsystems inside one deployable (see CLAUDE.md �
 identity/                       playlist/
   managers/UserManager            managers/PlaylistManager   (backtracking loop lives here)
   engines/AuthEngine, UserEngine  engines/SentenceEngine, SpotifyEngine
-  resources/UserResource,         resources/SpotifyResource, PlaylistResource
-            TokenResource
+  resources/UserResource,         resources/SpotifyResource, PlaylistResource,
+            TokenResource                     UserManagerResource (→ Identity, ADR 0009)
 shared/                         # db client, config, pure utils — not an Engine
 ```
 
