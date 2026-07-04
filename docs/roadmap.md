@@ -69,7 +69,7 @@ the `manager-resource` element + call rules (retired `token-store`); docs synced
 
 ---
 
-## Iteration 2 — Sentence decomposition (Playlist, pure logic) ✅ DONE (branch `feature/sentence-decomposition`)
+## Iteration 2 — Sentence decomposition (Playlist, pure logic) ✅ DONE (PR #13)
 
 The heart of the system (CLAUDE.md §3), shipped as the pure decomposition core with the
 search mocked in tests. Spotify HTTP = typed, hand-rolled `fetch` (ADR 0011). Shipped:
