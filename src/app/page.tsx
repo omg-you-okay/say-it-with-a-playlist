@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import Link from "next/link";
 
 import { LogoutButton } from "@/components/LogoutButton";
 import { PlaylistGenerator } from "@/components/PlaylistGenerator";
@@ -63,8 +62,11 @@ export default async function Home({
         {userId ? (
           <PlaylistGenerator />
         ) : (
+          // Plain <a>, not next/link: this route 307s cross-origin to Spotify's
+          // OAuth screen, and Link's client-side fetch hits a CORS wall on that
+          // redirect before falling back — a full navigation skips it entirely.
           <Button asChild size="sm" variant="default" className="font-outfit">
-            <Link href="/api/auth/login">Log in with Spotify</Link>
+            <a href="/api/auth/login">Log in with Spotify</a>
           </Button>
         )}
       </div>
