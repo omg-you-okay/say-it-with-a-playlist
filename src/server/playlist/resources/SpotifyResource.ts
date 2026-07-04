@@ -157,7 +157,12 @@ export function createSpotifyResource(
       return body.id;
     },
 
-    async createPlaylist(accessToken, spotifyUserId, metadata, isPublic = false) {
+    async createPlaylist(
+      accessToken,
+      spotifyUserId,
+      metadata,
+      isPublic = false,
+    ) {
       const res = await spotifyFetch(playlistsUrl(spotifyUserId), accessToken, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

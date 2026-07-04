@@ -197,12 +197,13 @@ describe("SpotifyResource.createPlaylist", () => {
   });
 
   it("sends public: true when isPublic is passed", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ id: "playlist-1", external_urls: {} }),
-        { status: 201 },
-      ),
-    );
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ id: "playlist-1", external_urls: {} }), {
+          status: 201,
+        }),
+      );
     const resource = createSpotifyResource({ fetchFn });
 
     await resource.createPlaylist(

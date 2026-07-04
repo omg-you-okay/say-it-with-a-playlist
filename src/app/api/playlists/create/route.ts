@@ -48,10 +48,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
 
-  const { sentence, tracks, public: isPublic } = (body ?? {}) as Record<
-    string,
-    unknown
-  >;
+  const {
+    sentence,
+    tracks,
+    public: isPublic,
+  } = (body ?? {}) as Record<string, unknown>;
   if (typeof sentence !== "string" || sentence.trim() === "") {
     return NextResponse.json({ error: "missing_sentence" }, { status: 400 });
   }
