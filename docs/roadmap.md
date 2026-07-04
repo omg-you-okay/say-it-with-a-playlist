@@ -69,31 +69,38 @@ the `manager-resource` element + call rules (retired `token-store`); docs synced
 
 ---
 
-## Iteration 2 — Sentence decomposition (Playlist, pure logic) ← NEXT
+## Iteration 2 — Sentence decomposition (Playlist, pure logic) ✅ DONE (PR #13)
 
-The heart of the system (CLAUDE.md §3). Candidate generation is pure and independently
-unit-testable; match validation talks to the music API; the backtracking loop lives in
-`PlaylistManager`, not in either concern. Spotify HTTP = typed, hand-rolled `fetch` against
-the documented REST API — the official SDK was evaluated and rejected (ADR 0011).
+The heart of the system (CLAUDE.md §3), shipped as the pure decomposition core with the
+search mocked in tests. Spotify HTTP = typed, hand-rolled `fetch` (ADR 0011). Shipped:
+shared `normalize` / `normalizeTitle` (ADR 0003 pipeline; version-tail stripping is
+**title-side only** — applied to a sentence it ate real words ("call me (maybe)") — and
+tails strip to a fixed point so "Song (Live) - Remix" → "song"); `SentenceEngine`
+(tokenise; groupings **longest-first, span cap 5**; substitution variants ordered
+**fewest-substitutions-first** — the brief's "defined priority order", decided here, not
+ADR-locked; config-driven map per ADR 0003); `SpotifyEngine` (exact-after-normalization,
+title side stripped, phrase side not); `SpotifyResource.searchTracks` (injected `fetchFn`,
+timeout, typed slice; token as call argument per ADR 0009); `PlaylistManager.matchSentence`
+— the backtracking loop with a per-request search memo **and a dead-end memo** (a failed
+suffix is abandoned permanently; without it the search is exponential in sentence length).
+75 new unit tests → suite 113.
 
-- Shared normalization utility: lowercase, strip punctuation/diacritics, strip version suffixes (parens/bracket/dash tails) — used by both engines (ADR 0003).
-- `SentenceEngine` — tokenise; generate multi-word candidate groupings in priority order; apply substitution map (to→2, you→U, for→4, are→R; one→1…ten→10; and→&; be→B/see→C/why→Y/oh→O/ex→X) (ADR 0003). **Pure, no external deps.**
-- `SpotifyEngine` — match-quality judgement: exact equality after normalization (ADR 0003).
-- `SpotifyResource` — Spotify search API access. It receives the access token as a call
-  argument: `PlaylistManager` obtains a fresh token via the `UserManagerResource` adapter
-  (→ `UserManager.getFreshAccessToken`, built in Iteration 3) and passes it in — a plain
-  Resource may not call the adapter itself (lint: resources import only `shared/`; ADR 0009).
-  The concurrent-refresh race flagged in PR #7 (two parallel refreshes persisting a
-  rotated-out refresh token → later `invalid_grant`) is fixed inside
-  `UserManager.getFreshAccessToken` with a per-user lock / `SELECT … FOR UPDATE`, landing with
-  the adapter in Iteration 3. **For Iteration 2 the search is mocked** (pure decomposition core).
-- `PlaylistManager` — the backtracking orchestration loop: try candidate → validate → on failure backtrack and re-derive groupings for the remainder; give up = no playlist (ADR 0003 no-match behavior).
-- **Tests:** heavy unit coverage of SentenceEngine + normalization + backtracking; mocked search.
-- **Done when:** given a sentence, the loop returns an ordered set of matched tracks covering the whole sentence, or a list of unmatched phrases.
+- **No new ADR needed:** the priority order is engine-internal and cheap to change —
+  documented in `SentenceEngine` and here, deliberately not locked.
+- **Known limitation:** nested-paren version tails ("Song (Remix (2003 Remaster))") aren't
+  stripped — that one track can't match; the loop degrades gracefully to other candidates.
+- **Follow-ups → Iteration 3 (must land before the loop hits the live API):** per-request
+  search budget + 429/Retry-After handling in `SpotifyResource`; consider extracting a
+  shared fetch-error/timeout helper (SpotifyResource is the 3rd copy of the AuthEngine
+  idiom); re-add real `PlaylistManager` wiring (removed as dead code this iteration) with
+  the generate endpoint + `UserManagerResource`. Still owed from the Iteration 2 spec: the
+  concurrent-refresh race fix (per-user lock / `SELECT … FOR UPDATE`) lands inside
+  `UserManager.getFreshAccessToken` together with the adapter.
+- **Done when:** given a sentence, the loop returns an ordered set of matched tracks covering the whole sentence, or a list of unmatched phrases. ✅ (mocked search)
 
 ---
 
-## Iteration 3 — Playlist creation
+## Iteration 3 — Playlist creation ← NEXT
 
 - `SpotifyResource` / `SpotifyEngine` — create playlist on the user's account; add tracks in sentence order (REST via typed `fetch`, injected `fetchFn` — ADR 0011).
 - Playlist naming: the sentence itself, truncated to 100 chars; branding in the description (ADR 0003).
