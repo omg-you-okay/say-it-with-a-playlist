@@ -8,6 +8,7 @@ import {
 } from "../engines/SpotifyEngine";
 import {
   createPlaylistResource,
+  type PlaylistHistoryEntry,
   type PlaylistResource,
 } from "../resources/PlaylistResource";
 import {
@@ -72,6 +73,8 @@ export interface PlaylistManager {
     tracks: MatchedTrack[],
     isPublic: boolean,
   ): Promise<CreatePlaylistResult>;
+  /** Newest-first history of previously created playlists (Iteration 5). */
+  getHistory(userId: string): Promise<PlaylistHistoryEntry[]>;
 }
 
 export interface PlaylistManagerDeps {
@@ -193,6 +196,13 @@ export function makePlaylistManager(
     return { userManagerResource, playlistResource };
   }
 
+  function requirePlaylistResource(): PlaylistResource {
+    if (!playlistResource) {
+      throw new Error("getHistory requires playlistResource");
+    }
+    return playlistResource;
+  }
+
   return {
     matchSentence,
 
@@ -234,6 +244,10 @@ export function makePlaylistManager(
       });
 
       return { ok: true, url: playlist.url };
+    },
+
+    async getHistory(userId) {
+      return requirePlaylistResource().listByUser(userId);
     },
   };
 }

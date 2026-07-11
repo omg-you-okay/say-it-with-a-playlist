@@ -237,7 +237,7 @@ describe("PlaylistManager.previewSentence", () => {
       spotifyEngine: createSpotifyEngine(),
       spotifyResource: { searchTracks, ...unusedSpotifyWriteMethods },
       userManagerResource: { getFreshAccessToken },
-      playlistResource: { save: vi.fn() },
+      playlistResource: { save: vi.fn(), listByUser: vi.fn() },
     });
 
     return { manager, searchTracks, getFreshAccessToken };
@@ -308,7 +308,7 @@ describe("PlaylistManager.createFromTracks", () => {
         addTracks,
       },
       userManagerResource: { getFreshAccessToken },
-      playlistResource: { save },
+      playlistResource: { save, listByUser: vi.fn() },
     });
 
     return {
@@ -408,5 +408,49 @@ describe("PlaylistManager.createFromTracks", () => {
       deps.manager.createFromTracks("user-1", "hello", confirmedTracks, false),
     ).rejects.toThrow("no tokens");
     expect(deps.createPlaylist).not.toHaveBeenCalled();
+  });
+});
+
+describe("PlaylistManager.getHistory", () => {
+  it("passes the userId through and returns the resource's entries as-is", async () => {
+    const entries = [
+      {
+        id: "entry-1",
+        sentence: "Hello!",
+        url: "https://open.spotify.com/playlist/1",
+        tracks: [],
+        createdAt: new Date("2030-01-01T00:00:00.000Z"),
+      },
+    ];
+    const listByUser = vi.fn().mockResolvedValue(entries);
+    const manager = makePlaylistManager({
+      sentenceEngine: createSentenceEngine(),
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: {
+        searchTracks: vi.fn(),
+        ...unusedSpotifyWriteMethods,
+      },
+      playlistResource: { save: vi.fn(), listByUser },
+    });
+
+    const result = await manager.getHistory("user-1");
+
+    expect(listByUser).toHaveBeenCalledWith("user-1");
+    expect(result).toBe(entries);
+  });
+
+  it("throws a clear wiring error when playlistResource is missing", async () => {
+    const manager = makePlaylistManager({
+      sentenceEngine: createSentenceEngine(),
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: {
+        searchTracks: vi.fn(),
+        ...unusedSpotifyWriteMethods,
+      },
+    });
+
+    await expect(manager.getHistory("user-1")).rejects.toThrow(
+      "getHistory requires playlistResource",
+    );
   });
 });

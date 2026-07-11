@@ -142,28 +142,74 @@ real playlist and one history row; a no-cover sentence returned 422 with no play
 
 ---
 
-## Iteration 4 — Frontend ← NEXT
+## Iteration 4 — Frontend ✅ DONE (PR #17, #19; post-merge fix #20)
 
-- "Log in with Spotify" button; OAuth callback handling in the UI.
-- Sentence input; submit → call generate endpoint.
-- Result display (tracks + shareable playlist link); loading and error states (incl. the no-match unmatched-phrases response).
-- shadcn/ui components (MCP already in `.mcp.json`).
-- **Preview-then-create flow (owner request, 2026-07-04):** the UX should first show the
-  matched tracks so the user can decide they like the result, _then_ a "Create playlist" button —
-  with a **private/public toggle** at that point. This likely splits the current single-shot
-  `POST /api/playlists/generate` into a **match/preview** step (decompose only, no playlist
-  created) and a **create** step (build the playlist from the confirmed tracks + chosen
-  visibility). Resolves the deferred `public:false`-vs-"shareable link" question from Iteration 3's
-  review — visibility becomes a user choice rather than a hard-coded default.
-- **Done when:** a user completes the whole flow in the browser without touching the API directly.
+Preview-then-create browser flow (owner request, 2026-07-04): split the former single-shot
+`POST /api/playlists/generate` into a **preview** step (decompose + match only, nothing
+created) and a **create** step (build the playlist from the confirmed tracks + chosen
+visibility), so the user sees the matched tracks before anything lands on their account —
+locked in **ADR 0012**, which also resolves the deferred `public:false`-vs-"shareable link"
+question from Iteration 3's review (visibility is now a user choice, defaulting to private).
+Shipped: `POST /api/playlists/preview` and `POST /api/playlists/create` routes backing
+`PlaylistManager.previewSentence` / `createFromTracks`; Server-Component homepage reads the
+session cookie (ADR 0002) to decide logged-in vs logged-out and maps `?auth_error` to
+friendly copy; `PlaylistGenerator` client component drives preview → matched tracks/unmatched
+→ public/private `Switch` → create → shareable link, with loading/error states throughout;
+`LogoutButton`; shadcn `input`/`switch`/`label` added, UI defines its own local mirror of the
+track/phrase wire shape rather than importing server types (ADR 0008 pattern, keeps the
+`ui`→`manager` lint boundary intact). Suite at 144.
+
+- **Post-merge fix (PR #20):** the login link used `next/link`; its `href` 307-redirects
+  cross-origin to Spotify's OAuth screen, and `Link`'s client-side RSC fetch hit a CORS wall
+  following that redirect before falling back to a real navigation (login still worked, but
+  with a visible failed-fetch flash). Swapped to a plain `<a href="/api/auth/login">` inside
+  the existing `Button asChild` — a plain anchor always does a full navigation.
+- **Landing note:** #18 was left targeting its stacked base branch and got merged there
+  instead of `main`, so `main` briefly had #17's backend with no UI calling it; #19 re-landed
+  #18's exact squash commit onto `main` (identical diff, no changes) to close the gap.
+- **Done when:** a user completes the whole flow in the browser without touching the API
+  directly. ✅ (live-verified against a real Spotify account)
 
 ---
 
-## Iteration 5 — Persistence & history
+## Iteration 5 — Persistence & history ✅ DONE
 
-- Past-playlists view reading `PlaylistResource` history.
-- Add Playwright MCP / e2e coverage by this point.
-- **Done when:** a logged-in user can revisit previously generated playlists.
+Past-playlists view reading the history `PlaylistResource` already persists (the
+`(user_id, created_at DESC)` index in `db/init/002_playlist.sql` was added in Iteration 3
+anticipating exactly this — **no migration this iteration**). Shipped: `PlaylistResource`
+gained `listByUser` (newest-first `SELECT`, its own `PlaylistHistoryEntry` storage-shape type
+per the ADR 0008 separation); `PlaylistManager.getHistory` delegates straight to it — a
+**plain same-subsystem call, no manager-resource** (history is Playlist-owned data with no
+Identity equivalent to route through; ADR 0009 only governs the token path). Frontend:
+`PlaylistHistory` — a **server-rendered** component (no `"use client"`; only a native
+`<details>` disclosure + links) fed by the homepage server component, which calls
+`getHistory(userId)` directly (app → Manager, the same sanctioned lint boundary the routes
+use) in a try/catch that degrades to a soft "Couldn't load your past playlists" line rather
+than crashing the page; `PlaylistGenerator` now calls `router.refresh()` after a successful
+create so the new row appears without a reload (same idiom as `LogoutButton`). Playwright MCP
+added to `.mcp.json`. 6 new tests → suite 150 (4 real-Postgres `PlaylistResource` integration
+
+- 2 `getHistory` manager units).
+
+* **No new endpoint (YAGNI, not ADR-worthy):** the homepage is already a Server Component
+  reading the session cookie, so it fetches history in-process via the Manager rather than
+  adding a `GET /api/playlists` route — one less moving part; a route can be added later if a
+  client-side consumer ever needs it. The app→Manager boundary is unchanged (routes already
+  cross it), so nothing architectural was newly decided or relitigated.
+* **Deferred → CI e2e:** Playwright MCP is wired for interactive browser verification, but an
+  automated e2e suite in CI is not — it needs a stubbed Spotify OAuth (real consent can't run
+  headless in CI). Revisit if regressions in the browser flow start slipping through.
+* **Review follow-up → history read over-provisions its manager:** the homepage builds
+  `createPlaylistManager()` to call `getHistory`, which transitively runs
+  `createUserManager → createAuthEngine`, eagerly requiring the three `SPOTIFY_*` env vars for a
+  query that only touches Postgres. Harmless today (those vars are always set once login works,
+  and the read is wrapped in a try/catch), but it couples a DB read to Spotify config and wastes
+  construction each render. The `requirePlaylistResource` guard already anticipates a
+  cross-subsystem-free manager — a history-only factory (omit `userManagerResource`) would
+  decouple it and make that guard reachable in production. Revisit if a lighter path is wanted.
+* **Done when:** a logged-in user can revisit previously generated playlists. ✅ (verified by
+  seeding a real history row + session cookie and rendering the live homepage; full browser
+  OAuth login not re-driven this session — Playwright MCP loads next session)
 
 ---
 
