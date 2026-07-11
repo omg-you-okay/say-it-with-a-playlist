@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ const GENERIC_ERROR = "Something went wrong. Please try again.";
 const LOGIN_REQUIRED_ERROR = "Your session expired — please log in again.";
 
 export function PlaylistGenerator() {
+  const router = useRouter();
   const [sentence, setSentence] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [phase, setPhase] = useState<Phase>({ step: "input" });
@@ -79,6 +81,10 @@ export function PlaylistGenerator() {
       const body = await res.json();
       if (res.status === 200) {
         setPhase({ step: "created", url: body.url });
+        // The homepage is a server component reading history at render time
+        // (Iteration 5) — refresh so the new playlist shows up without a
+        // full reload (same idiom as LogoutButton).
+        router.refresh();
       } else if (res.status === 401) {
         setPhase({ step: "error", message: LOGIN_REQUIRED_ERROR });
       } else {

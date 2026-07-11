@@ -26,8 +26,19 @@ export interface SavePlaylistInput {
   tracks: PersistedTrack[];
 }
 
+export interface PlaylistHistoryEntry {
+  id: string;
+  sentence: string;
+  url: string;
+  tracks: PersistedTrack[];
+  createdAt: Date;
+}
+
 export interface PlaylistResource {
   save(userId: string, input: SavePlaylistInput): Promise<void>;
+  /** Newest-first, per user (Iteration 5 history view; rides the existing
+   * `(user_id, created_at DESC)` index). */
+  listByUser(userId: string): Promise<PlaylistHistoryEntry[]>;
 }
 
 export function createPlaylistResource(
@@ -46,6 +57,29 @@ export function createPlaylistResource(
           JSON.stringify(input.tracks),
         ],
       );
+    },
+
+    async listByUser(userId) {
+      const { rows } = await pool.query<{
+        id: string;
+        sentence: string;
+        url: string;
+        tracks: PersistedTrack[];
+        created_at: Date;
+      }>(
+        `SELECT id, sentence, url, tracks, created_at
+         FROM playlists
+         WHERE user_id = $1
+         ORDER BY created_at DESC`,
+        [userId],
+      );
+      return rows.map((row) => ({
+        id: row.id,
+        sentence: row.sentence,
+        url: row.url,
+        tracks: row.tracks,
+        createdAt: row.created_at,
+      }));
     },
   };
 }

@@ -3,6 +3,10 @@
     "shadcn": {
       "command": "pnpm",
       "args": ["dlx", "shadcn@latest", "mcp"]
+    },
+    "playwright": {
+      "command": "pnpm",
+      "args": ["dlx", "@playwright/mcp@latest"]
     }
   }
 }

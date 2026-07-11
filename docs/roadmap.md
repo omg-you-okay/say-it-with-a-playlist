@@ -172,11 +172,44 @@ track/phrase wire shape rather than importing server types (ADR 0008 pattern, ke
 
 ---
 
-## Iteration 5 — Persistence & history ← NEXT
+## Iteration 5 — Persistence & history ✅ DONE
 
-- Past-playlists view reading `PlaylistResource` history.
-- Add Playwright MCP / e2e coverage by this point.
-- **Done when:** a logged-in user can revisit previously generated playlists.
+Past-playlists view reading the history `PlaylistResource` already persists (the
+`(user_id, created_at DESC)` index in `db/init/002_playlist.sql` was added in Iteration 3
+anticipating exactly this — **no migration this iteration**). Shipped: `PlaylistResource`
+gained `listByUser` (newest-first `SELECT`, its own `PlaylistHistoryEntry` storage-shape type
+per the ADR 0008 separation); `PlaylistManager.getHistory` delegates straight to it — a
+**plain same-subsystem call, no manager-resource** (history is Playlist-owned data with no
+Identity equivalent to route through; ADR 0009 only governs the token path). Frontend:
+`PlaylistHistory` — a **server-rendered** component (no `"use client"`; only a native
+`<details>` disclosure + links) fed by the homepage server component, which calls
+`getHistory(userId)` directly (app → Manager, the same sanctioned lint boundary the routes
+use) in a try/catch that degrades to a soft "Couldn't load your past playlists" line rather
+than crashing the page; `PlaylistGenerator` now calls `router.refresh()` after a successful
+create so the new row appears without a reload (same idiom as `LogoutButton`). Playwright MCP
+added to `.mcp.json`. 6 new tests → suite 150 (4 real-Postgres `PlaylistResource` integration
+
+- 2 `getHistory` manager units).
+
+* **No new endpoint (YAGNI, not ADR-worthy):** the homepage is already a Server Component
+  reading the session cookie, so it fetches history in-process via the Manager rather than
+  adding a `GET /api/playlists` route — one less moving part; a route can be added later if a
+  client-side consumer ever needs it. The app→Manager boundary is unchanged (routes already
+  cross it), so nothing architectural was newly decided or relitigated.
+* **Deferred → CI e2e:** Playwright MCP is wired for interactive browser verification, but an
+  automated e2e suite in CI is not — it needs a stubbed Spotify OAuth (real consent can't run
+  headless in CI). Revisit if regressions in the browser flow start slipping through.
+* **Review follow-up → history read over-provisions its manager:** the homepage builds
+  `createPlaylistManager()` to call `getHistory`, which transitively runs
+  `createUserManager → createAuthEngine`, eagerly requiring the three `SPOTIFY_*` env vars for a
+  query that only touches Postgres. Harmless today (those vars are always set once login works,
+  and the read is wrapped in a try/catch), but it couples a DB read to Spotify config and wastes
+  construction each render. The `requirePlaylistResource` guard already anticipates a
+  cross-subsystem-free manager — a history-only factory (omit `userManagerResource`) would
+  decouple it and make that guard reachable in production. Revisit if a lighter path is wanted.
+* **Done when:** a logged-in user can revisit previously generated playlists. ✅ (verified by
+  seeding a real history row + session cookie and rendering the live homepage; full browser
+  OAuth login not re-driven this session — Playwright MCP loads next session)
 
 ---
 

@@ -2,7 +2,12 @@ import { cookies } from "next/headers";
 
 import { LogoutButton } from "@/components/LogoutButton";
 import { PlaylistGenerator } from "@/components/PlaylistGenerator";
+import {
+  PlaylistHistory,
+  type HistoryEntry,
+} from "@/components/PlaylistHistory";
 import { Button } from "@/components/ui/button";
+import { createPlaylistManager } from "@/server/playlist/managers/PlaylistManager";
 import { readSessionToken, SESSION_COOKIE } from "@/server/shared/session";
 
 // Known callback failure codes (see api/auth/callback/route.ts) mapped to
@@ -38,6 +43,17 @@ export default async function Home({
       AUTH_ERROR_MESSAGES.callback_failed)
     : undefined;
 
+  let history: HistoryEntry[] = [];
+  let historyError = false;
+  if (userId) {
+    try {
+      history = await createPlaylistManager().getHistory(userId);
+    } catch (error) {
+      console.error("Failed to load playlist history", error);
+      historyError = true;
+    }
+  }
+
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
       <div className="w-full max-w-md rounded-md border border-red-700/30 bg-sidebar-accent px-6 py-5 drop-shadow-2xl drop-shadow-gray-300">
@@ -60,7 +76,16 @@ export default async function Home({
         )}
 
         {userId ? (
-          <PlaylistGenerator />
+          <div className="flex flex-col gap-6">
+            <PlaylistGenerator />
+            {historyError ? (
+              <p className="font-outfit text-sm text-muted-foreground">
+                Couldn&apos;t load your past playlists.
+              </p>
+            ) : (
+              <PlaylistHistory entries={history} />
+            )}
+          </div>
         ) : (
           // Plain <a>, not next/link: this route 307s cross-origin to Spotify's
           // OAuth screen, and Link's client-side fetch hits a CORS wall on that
