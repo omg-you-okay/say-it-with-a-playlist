@@ -125,17 +125,19 @@ This is as important as the code itself; the project deliberately practices prof
 3. **Playlist creation** — create playlist, add tracks, persist history, end-to-end generate endpoint
 4. **Frontend** — login button, OAuth callback handling, sentence input, result display, loading and error states
 5. **Persistence & history** — past-playlists view
-6. **Advanced** _(explicitly out of MVP scope)_ — manual song replacement, genre filtering
+6. **UX overhaul** — designed, polished frontend via a Figma-via-MCP design round-trip; pulls in **manual song replacement** (swap a matched track in the preview) as a UX-driven feature. Genre filtering stays out of scope. _(Reframed 2026-07-11 from the original "Advanced / explicitly out of MVP scope" phase — see `docs/roadmap.md` Iteration 6 for the live workflow and decisions.)_
 
 ---
 
 ## 10. Non-Goals (MVP)
 
-- Manual song replacement after generation
 - Genre filtering
 - Streaming platforms other than Spotify
 - Social features (sharing/following)
 - Native mobile app
+
+_(Manual song replacement after generation was a non-goal through the MVP phases (0–5); it
+was pulled into scope as part of the Iteration 6 UX overhaul — see §9 and `docs/roadmap.md`.)_
 
 ---
 

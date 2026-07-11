@@ -213,7 +213,91 @@ added to `.mcp.json`. 6 new tests → suite 150 (4 real-Postgres `PlaylistResour
 
 ---
 
-## Iteration 6 — Advanced (explicitly out of MVP scope)
+## Iteration 6 — UX overhaul 🚧 IN PROGRESS (Setup phase)
 
-Manual song replacement after generation · genre filtering. Tracked for visibility only;
-not built during MVP (CLAUDE.md §10 non-goals).
+Reframes the old "Advanced" iteration (scope note kept at the foot of this section) as a
+UX-driven push (owner request, 2026-07-11, kicked off after Iteration 5 merged): make the app
+feel like a real product — a designed, polished frontend with real UX care. Likely pulls in
+**manual song replacement** (swap a matched track in the preview) as a UX-driven feature;
+genre filtering stays out of scope.
+
+**Decisions (2026-07-11 discussion):**
+
+- **Design agreement medium: Figma via MCP** (owner's explicit choice; token cost of the
+  Figma round-trip acknowledged and accepted). Owner supplies a general overview + low-fi
+  sketch photos — no Figma files from the owner. Claude generates designs into Figma;
+  agreement happens on the Figma canvas _before_ any code.
+- **Skills installed:** `anthropics/skills@frontend-design` (official, typography/color/motion/
+  spatial-composition pillars), `vercel-labs/agent-skills@web-design-guidelines` (audits UI
+  against Vercel's Web Interface Guidelines), `wondelai/skills@web-typography` (dedicated
+  typeface-pairing/type-scale diagnostic — added because `frontend-design` only covers pairing
+  at a high level). Vendored under `.agents/skills/` (all markdown, no scripts) and symlinked
+  into `.claude/skills/`, pinned by content hash in `skills-lock.json` — committed so a fresh
+  clone/session has them without a network fetch, consistent with the repo's "shared agent
+  config is committed" convention (`.gitignore`). All three passed Gen Agent Trust Hub + Socket
+  scans. **`web-design-guidelines` scored Med Risk on Snyk** (vs. Low for the other two): its
+  `SKILL.md` fetches its _actual rules_ at review time from
+  `raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md` — a moving
+  branch, so remote content becomes agent instructions. Reviewed and accepted (Vercel's own
+  repo, public guidelines content, read-only review skill), but it is a prompt-injection surface
+  worth knowing about; the vendored `SKILL.md` is 40 lines and cheap to re-read if it changes.
+  Evaluated and rejected: multica-ai/andrej-karpathy-skills and mattpocock/skills (process
+  discipline, redundant with the CLAUDE.md workflow).
+- **Claude Design (claude.ai/design) not used** — built for component design systems,
+  overkill at this scale.
+- **MCPs:** Playwright MCP is project config (`.mcp.json`, added Iteration 5). **Figma MCP is
+  _not_ in `.mcp.json`** — it is a claude.ai connector enabled per-user, so a fresh clone does
+  **not** inherit it; whoever runs the Design phase must have the Figma connector authorized on
+  their claude.ai account. Together they cover the design → implement → verify loop; nothing
+  else needed.
+
+**Workflow:**
+
+- **A. Setup** (this session): install the three skills above ✅; branch `feature/ux-overhaul` ✅.
+- **B. Design in Figma** (gated on owner input: overview + sketches, not yet provided):
+  load the mandatory `/figma-use` skill before any `use_figma` call; `whoami` to confirm
+  Figma auth; `create_new_file` → one Figma file for the project. **Round 1 — direction:**
+  2–3 distinct visual directions (typography, color, layout, vibe) as side-by-side frames,
+  owner picks/annotates in Figma. **Round 2 — screens:** frames for every UI state in the
+  chosen direction — logged-out, input, matching/loading, preview (album art + track-swap
+  affordance), unmatched, creating, created, history list, empty history, error states;
+  desktop + mobile. Iterate on Figma comments until agreed. Token hygiene: `get_screenshot`
+  to check results; `get_design_context` only per-frame during implementation.
+- **C. Implement** (normal iteration discipline, one session per chunk): implement against
+  the agreed Figma frames; shadcn/ui + Tailwind (ADR 0001); frontend stays a thin client of
+  the existing preview/create/history endpoints. Track-swap needs a small API addition
+  (alternative candidates per phrase) — design within the iDesign layering: PlaylistManager
+  orchestrates, engines stay pure, no layer skipping (CLAUDE.md §4, ADR 0009/0010). Tests
+  alongside (CLAUDE.md §7); verify with Playwright MCP driving the full flow (login →
+  sentence → preview → swap → create → history) at desktop + mobile viewports, screenshots
+  compared against the Figma frames.
+
+**UX gaps already spotted in the current UI:**
+
+- **No album art in the preview list** (it's plain text). Spotify's search response carries
+  `album.images`, but `SpotifyResource.searchTracks` maps it away — the typed slice is
+  `TrackCandidate = { id, uri, name, artistNames }`. So this is **not** a frontend-only change:
+  it needs `SpotifySearchResponse` + `TrackCandidate` widened, threaded through `MatchedTrack`
+  and the preview/create wire shape, and mirrored in the UI's local type (ADR 0008 pattern).
+  Resource → Manager → UI, no layer skipping.
+- **No way to swap a matched track** (first hit is forced) — needs the API addition noted in
+  step C (alternative candidates per phrase).
+- **Loading states are just button-label swaps** — no delight moment when the sentence "spells
+  out". This one genuinely is frontend-only.
+
+Frontend surfaces: `src/app/page.tsx`, `src/components/PlaylistGenerator.tsx`,
+`src/components/PlaylistHistory.tsx`, `src/app/globals.css`, `src/components/ui/*`. Backend
+surfaces (album art + track swap): `src/server/playlist/resources/SpotifyResource.ts`,
+`src/server/playlist/managers/PlaylistManager.ts`, and the preview/create route handlers.
+
+- **Done when (Setup phase):** skills installed and confirmed loadable, this section lands
+  on `main`, branch exists. ✅ once merged.
+- **Done when (Design phase):** owner has agreed on a visual direction and full screen set
+  in Figma.
+- **Done when (Implement phase):** a logged-in user can complete the full flow, including
+  track swap, against the agreed design; Playwright screenshots match the Figma frames at
+  desktop + mobile.
+
+Old scope note (superseded by the above, kept for history): manual song replacement after
+generation · genre filtering was originally tracked for visibility only, not built during
+MVP (CLAUDE.md §10 non-goals). Genre filtering remains out of scope.
