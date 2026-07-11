@@ -1,5 +1,7 @@
 # Generated / vendored / local tooling — not ours to format
 .claude
+.agents
+skills-lock.json
 pnpm-lock.yaml
 .next
 out
