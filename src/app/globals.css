@@ -138,20 +138,21 @@
     touch-action: manipulation;
   }
 
-  /* Minimal scrollbars. The platform default is a chunky light-on-light bar
-     that looks wrong on the console's black and — worse — appears only once the
-     content overflows, reflowing everything sideways at the moment the log
-     starts scrolling. `scrollbar-gutter: stable` reserves the track up front, so
-     the arrival of the first scrollbar shifts nothing. */
+  /* Minimal scrollbars — the platform default is a chunky bar that looks wrong
+     on the console's black. */
   .scroll-slim,
   .scroll-slim-dark {
-    scrollbar-gutter: stable;
     scrollbar-width: thin;
   }
   .scroll-slim {
     scrollbar-color: var(--sand-8) transparent;
   }
+  /* Only the log reserves its track. It streams, so a scrollbar appearing the
+     moment it overflows would shove every line sideways mid-search. Everywhere
+     else the reserved gutter is just a dead strip the row backgrounds don't
+     reach — which read as a white gap down the side of the track list. */
   .scroll-slim-dark {
+    scrollbar-gutter: stable;
     scrollbar-color: var(--sand-dark-6) transparent;
   }
 
