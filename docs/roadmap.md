@@ -552,11 +552,76 @@ alternative is title-equal under ADR 0003, a swap can never break the sentence.
 
 ---
 
+## Iteration 7 — Matching recall & failure honesty ✅ DONE
+
+Not part of the original phase plan (CLAUDE.md §9) — seeded from a live diagnosis (owner report,
+2026-07-12, same day as Iteration 6 Chunk 2 landed): "I am eating a salad" worked, but ordinary
+article-heavy sentences like "I am eating a quesadilla for lunch today" dead-ended, and the
+failure message ("Try rewording: a quesadilla for lunch today, a quesadilla for lunch, …") read as
+several problems instead of one. A live session against real Spotify (preview path only, no
+playlists created) traced both to **search recall, not the decomposition logic** — full findings,
+rejected alternatives (an LLM among them), and the exact probe data are in
+[ADR 0015](decisions/0015-search-recall-page-2-before-miss.md).
+
+Shipped: `SpotifyResource.searchTracks` gained an optional `offset` param; `PlaylistManager`
+retries a page-1 miss at `offset=50` **only for 1-word candidates** (`deepSearchMaxWords`,
+default 1 — multi-word phrases measured zero benefit from paging, so they're untouched);
+`SpotifyEngine.findMatch` now prefers a clean title _among the tracks ADR 0003 already accepts_;
+`too→2` joins the ADR 0003 substitution map. The failure report was rebuilt: `PlaylistManager`
+now records only 1-word-candidate misses (provably the only ones that can be the global deepest
+failure — a longer span that misses always has a shorter candidate left to try at the same index),
+so `unmatched` is always the single word the search got stuck on, never a list of every grouping
+tried on the way there. The terminal `done: false` event gained one additive field (same category
+as Iteration 6's `index`/`wordCount`/`searches`/`tokens`): `reason: "no_match" | "budget"`, so a
+genuine no-match is told apart from the search budget stopping the search early — previously
+indistinguishable, since a budget give-up cached a fake "no match". `PlaylistWorkspace` renders
+the single-word/budget copy accordingly. A new `src/lib/preview-stream.contract.test.ts` closes
+the Iteration 6 Chunk 1 follow-up: a compile-time `expectTypeOf` assertion that the Manager's
+`PreviewEvent` union is accepted by the UI-local mirror, checked by `pnpm typecheck` (a real CI
+step) rather than left to a runtime shape mismatch. 183 tests (was 170).
+
+- **The code review caught two subtle bugs in this iteration's own first draft, both now fixed and
+  pinned by tests** — worth recording, because both were "looks obviously right, is wrong":
+  1. **The clean-title preference silently widened ADR 0003's match rule.** Trying the _unstripped_
+     comparison first (`normalize(title) === target`) is not a reordering of valid matches: parens
+     normalize to separators, so `normalize("Call Me (Live)")` is `"call me live"` and the phrase
+     "call me live" would have matched a track ADR 0003 rejects. It now filters by the ADR rule
+     first and prefers within the survivors.
+  2. **The give-up signal was attributed per-position, which under-reports it.** The depth-first
+     search reaches deep positions _early_, while the budget is healthy, so a genuine miss recorded
+     there masked a give-up that happened later while backtracking — reporting a confident "no song
+     is titled X" for a search that had quietly stopped looking. (The obvious repair,
+     `searchesUsed >= maxSearches`, over-reports in the mirror-image case: a search that finishes
+     exhaustively on its last search.) It is now a request-scoped flag set the moment a lookup is
+     _refused_ a search. Both failure modes have regression tests.
+
+- **Live-verified against a real Spotify account** (preview only, nothing created): the exact
+  reported-broken sentence — "I am eating a quesadilla for lunch today" — now produces a full
+  6-track playlist (31 searches, 23.5s). "the quick brown fox jumps over the lazy dog" resolved in
+  **17** searches (down from 22 pre-fix) with a cleaner match ("Jumps" instead of "Fox Jumps (To
+  the Rave)"). A genuinely unmatchable sentence reported `unmatched: ["xyzzyplugh"],
+reason: "no_match"` — one word, correctly not mislabeled as a budget give-up (4 of 100 searches
+  spent). _(Verified before the code-review fixes above; those are covered by the regression tests,
+  and the two behaviours the live run exercised — the recall fix and the honest single-word report
+  — are unchanged by them.)_
+- **No AI/LLM was introduced, and the ADR records why:** every failure traced to page-1 search
+  recall, not sentence understanding — an LLM would have added cost and latency to a problem it
+  wouldn't have fixed.
+- **Not done:** the deepening bound and budget accounting were tuned to the sentences probed this
+  session; a much larger corpus of real user sentences could surface a different `deepSearchMaxWords`
+  or reveal that `maxSearches` (still 100, unchanged) needs raising. No evidence of that yet.
+- **Done when:** a sentence containing bare articles produces a real playlist live, and a sentence
+  that genuinely cannot be spelled reports the single word it got stuck on — or honestly says it
+  gave up — instead of listing every failed grouping. ✅ (live-verified above)
+
+---
+
 ## What's next — the MVP phase plan (CLAUDE.md §9) is complete
 
-Iterations 0–6 are done: the app does the whole job, in the agreed design, live against real
-Spotify. There is **no Iteration 7 planned** — the next session should pick from the debt below
-rather than assume a queue exists. Roughly in the order the project would feel them:
+Iterations 0–7 are done: the app does the whole job, in the agreed design, live against real
+Spotify, with the recall/failure-honesty fixes from Iteration 7. There is **no Iteration 8
+planned** — the next session should pick from the debt below rather than assume a queue exists.
+Roughly in the order the project would feel them:
 
 1. **Ship it (nothing is deployed).** Still owed since Iteration 1: hosted Supabase, a deploy
    target, and a **secrets strategy** (local `.env` / CI secrets / prod env) — the last is a
@@ -568,10 +633,14 @@ rather than assume a queue exists. Roughly in the order the project would feel t
    engine. All were caught by measuring a real browser. Chunk 2 also proved the harness is cheap —
    intercept `POST /api/playlists/preview` and serve a synthetic NDJSON stream, and the whole live
    view is drivable with **no Spotify and no OAuth**, which was the original blocker.
-3. **The NDJSON contract test** (Iteration 6 Chunk 1 follow-up, now higher risk — the shape was
-   widened twice more in Chunk 2).
-4. **Correctness debt, in rough severity order:** the concurrent-refresh race in
+3. **Correctness debt, in rough severity order:** the concurrent-refresh race in
    `UserManager.getFreshAccessToken` (owed since Iteration 2); `invalid_grant` re-auth UX (Iteration
    3); the orphaned-playlist-on-partial-failure and >100-track cases (Iteration 3 review).
-5. **Playwright MCP** is still pinned to the wrong browser channel — check a fresh connection before
+4. **Playwright MCP** is still pinned to the wrong browser channel — check a fresh connection before
    trusting it (Iteration 6 Chunk 2).
+5. **Re-tune Iteration 7's recall fix on a larger sentence corpus** if matching complaints
+   resurface — the deepening bound and search budget were measured against a handful of probed
+   sentences, not a broad sample (see Iteration 7's "Not done").
+
+_(The NDJSON contract test, previously debt item 3 here, was closed in Iteration 7 —
+`src/lib/preview-stream.contract.test.ts`.)_

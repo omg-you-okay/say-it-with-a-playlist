@@ -13,6 +13,7 @@ import {
 } from "../resources/PlaylistResource";
 import {
   createSpotifyResource,
+  SEARCH_LIMIT,
   type SpotifyResource,
   type TrackCandidate,
 } from "../resources/SpotifyResource";
@@ -46,9 +47,20 @@ export interface MatchedTrack {
 export type SentenceMatchResult =
   | { ok: true; tracks: MatchedTrack[] }
   | {
-      /** ADR 0003: no full cover ⇒ no playlist; report what to reword. */
+      /** ADR 0003: no full cover ⇒ no playlist; report what to reword.
+       * Always the single word the search got stuck on (empty only when the
+       * sentence itself was blank) — see ADR 0015: the deepest position any
+       * backtracking path reached is provably where that word's own 1-word
+       * candidate missed, so there is exactly one word to blame, not a list
+       * of every grouping that was tried on the way there. */
       ok: false;
       unmatched: string[];
+      /** Whether the stuck word is a genuine no-match, or the maxSearches
+       * budget ran out before the search could finish (ADR 0015) — without
+       * this, a give-up reads identically to "no song is titled this," and
+       * the user is told to reword a word when the app simply stopped
+       * looking. */
+      reason: "no_match" | "budget";
     };
 
 export type PreviewResult = SentenceMatchResult;
@@ -124,6 +136,11 @@ export interface PlaylistManagerDeps {
   playlistResource?: PlaylistResource;
   /** Caps distinct outbound searches per matchSentence call (default 100). */
   maxSearches?: number;
+  /** Candidates at or under this word count get a page-2 retry on a page-1
+   * miss (default 1 — see ADR 0015: a live probe found bare tiny words
+   * ("a", "i", "the") have an exact-title track sitting on Spotify's second
+   * results page, while multi-word phrases never benefited from it). */
+  deepSearchMaxWords?: number;
 }
 
 // A generous ceiling on distinct Spotify searches per request — the
@@ -131,6 +148,8 @@ export interface PlaylistManagerDeps {
 // substitutable sentence could still fan out far enough to be worth bounding
 // so one request can never hammer Spotify unboundedly.
 const DEFAULT_MAX_SEARCHES = 100;
+
+const DEFAULT_DEEP_SEARCH_MAX_WORDS = 1;
 
 export function makePlaylistManager(
   deps: PlaylistManagerDeps,
@@ -142,6 +161,7 @@ export function makePlaylistManager(
     userManagerResource,
     playlistResource,
     maxSearches = DEFAULT_MAX_SEARCHES,
+    deepSearchMaxWords = DEFAULT_DEEP_SEARCH_MAX_WORDS,
   } = deps;
 
   async function matchSentence(
@@ -152,7 +172,11 @@ export function makePlaylistManager(
     const words = sentenceEngine.tokenize(sentence);
     onProgress?.({ type: "tokenised", words: words.length, tokens: words });
     if (words.length === 0) {
-      const result: SentenceMatchResult = { ok: false, unmatched: [] };
+      const result: SentenceMatchResult = {
+        ok: false,
+        unmatched: [],
+        reason: "no_match",
+      };
       onProgress?.({ type: "done", searches: 0, ...result });
       return result;
     }
@@ -161,35 +185,70 @@ export function makePlaylistManager(
     // variant can come up on several paths — search each one only once.
     const matchByVariant = new Map<string, TrackCandidate | null>();
     let searchesUsed = 0;
+    // Set the moment a lookup is *denied* a search it wanted to make, so a
+    // give-up can never be reported as a confident "no song is titled this"
+    // (ADR 0015). Request-scoped rather than per-position: the depth-first
+    // search reaches deep positions early, so a genuine miss recorded there
+    // before the budget ran out would otherwise mask the give-up that
+    // followed. Distinct from `searchesUsed >= maxSearches`, which is also
+    // true of a search that finished exhaustively and merely spent its last
+    // search doing so.
+    let budgetDenied = false;
 
-    // Failure report: the candidate phrases that all failed at the deepest
-    // word position any path reached — the part of the sentence the user
-    // has to reword (ADR 0003).
+    // Failure report (ADR 0015): the word position of the deepest point any
+    // backtracking path reached. That position's own 1-word candidate is
+    // provably the thing that failed there — if it had hit, its remainder
+    // would have failed deeper, contradicting "deepest" — so there is always
+    // exactly one word to blame, never a list of every grouping tried on the
+    // way there. Only 1-word misses are recorded, since a longer span that
+    // misses always has a shorter candidate left to try at the same index.
     let deepestFailIndex = -1;
-    let deepestFailPhrases: string[] = [];
 
-    function recordFailure(index: number, phrase: string) {
-      if (index > deepestFailIndex) {
-        deepestFailIndex = index;
-        deepestFailPhrases = [];
-      }
-      if (index === deepestFailIndex && !deepestFailPhrases.includes(phrase)) {
-        deepestFailPhrases.push(phrase);
-      }
+    function recordFailure(index: number) {
+      if (index > deepestFailIndex) deepestFailIndex = index;
     }
 
-    async function findTrack(variant: string): Promise<TrackCandidate | null> {
+    async function findTrack(
+      variant: string,
+      wordCount: number,
+    ): Promise<TrackCandidate | null> {
       const cached = matchByVariant.get(variant);
       if (cached !== undefined) return cached;
       // Budget exhausted: fail this (and any future) lookup without another
-      // Spotify call, and cache it so the rest of this request stays consistent.
+      // Spotify call, and cache it so the rest of this request stays
+      // consistent. This is a give-up, not a confirmed absence — record that,
+      // so the terminal result can say so.
       if (searchesUsed >= maxSearches) {
+        budgetDenied = true;
         matchByVariant.set(variant, null);
         return null;
       }
       searchesUsed++;
-      const results = await spotifyResource.searchTracks(accessToken, variant);
-      const match = spotifyEngine.findMatch(variant, results) ?? null;
+      const page0 = await spotifyResource.searchTracks(accessToken, variant);
+      let match = spotifyEngine.findMatch(variant, page0) ?? null;
+
+      // Deepen only for bare/short candidates. A live probe (ADR 0015) found
+      // every tiny word ("a", "i", "the") that missed page 1 had an
+      // exact-title track on page 2, while multi-word phrases never
+      // benefited from it — a real title of any length already ranks highly
+      // in Spotify's own search, so there is nothing to gain by paging
+      // further for those. The second page is a second outbound call, so it
+      // is metered against the same budget.
+      if (!match && wordCount <= deepSearchMaxWords) {
+        if (searchesUsed >= maxSearches) {
+          // Wanted page 2 and was refused: this null is a give-up too.
+          budgetDenied = true;
+        } else {
+          searchesUsed++;
+          const page1 = await spotifyResource.searchTracks(
+            accessToken,
+            variant,
+            SEARCH_LIMIT,
+          );
+          match = spotifyEngine.findMatch(variant, page1) ?? null;
+        }
+      }
+
       matchByVariant.set(variant, match);
       return match;
     }
@@ -219,11 +278,11 @@ export function makePlaylistManager(
 
         let match: TrackCandidate | null = null;
         for (const variant of candidate.variants) {
-          match = await findTrack(variant);
+          match = await findTrack(variant, candidate.wordCount);
           if (match) break;
         }
         if (!match) {
-          recordFailure(index, candidate.phrase);
+          if (!hasShorterCandidate) recordFailure(index);
           onProgress?.({ type: "miss", index, phrase: candidate.phrase });
           if (hasShorterCandidate) {
             onProgress?.({ type: "split", index, phrase: candidate.phrase });
@@ -249,9 +308,17 @@ export function makePlaylistManager(
     }
 
     const tracks = await cover(0);
+    // A failed cover in which some lookup was refused a search is not an
+    // exhaustive no-match: groupings that might have covered the sentence were
+    // never tried. Say so, rather than blaming the deepest word the search
+    // happened to reach before it gave up (ADR 0015).
     const result: SentenceMatchResult = tracks
       ? { ok: true, tracks }
-      : { ok: false, unmatched: deepestFailPhrases };
+      : {
+          ok: false,
+          unmatched: [words[deepestFailIndex]],
+          reason: budgetDenied ? "budget" : "no_match",
+        };
     onProgress?.({ type: "done", searches: searchesUsed, ...result });
     return result;
   }

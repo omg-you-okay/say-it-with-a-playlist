@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createSentenceEngine } from "../engines/SentenceEngine";
 import { createSpotifyEngine } from "../engines/SpotifyEngine";
-import { type TrackCandidate } from "../resources/SpotifyResource";
+import {
+  SEARCH_LIMIT,
+  type TrackCandidate,
+} from "../resources/SpotifyResource";
 import { makePlaylistManager, type PreviewEvent } from "./PlaylistManager";
 
 // The engines are real — these tests exercise the whole decomposition core.
@@ -27,8 +30,9 @@ const unusedSpotifyWriteMethods = {
 };
 
 function makeManager(catalog: Record<string, string[]>) {
-  const searchTracks = vi.fn(async (_token: string, query: string) =>
-    (catalog[query] ?? []).map(track),
+  const searchTracks = vi.fn(
+    async (_token: string, query: string, _offset?: number) =>
+      (catalog[query] ?? []).map(track),
   );
   const manager = makePlaylistManager({
     sentenceEngine: createSentenceEngine(),
@@ -130,17 +134,25 @@ describe("PlaylistManager.matchSentence", () => {
     const result = await manager.matchSentence("tok", "love xyzzy");
 
     // "love" itself matched — the report points at the actual blocker.
-    expect(result).toEqual({ ok: false, unmatched: ["xyzzy"] });
+    expect(result).toEqual({
+      ok: false,
+      unmatched: ["xyzzy"],
+      reason: "no_match",
+    });
   });
 
-  it("reports every failed grouping at the blocking position", async () => {
+  it("reports only the single word it got stuck on, not every grouping tried there (ADR 0015)", async () => {
     const { manager } = makeManager({});
 
     const result = await manager.matchSentence("tok", "xyzzy love");
 
+    // Every span down to 1 word was tried at index 0 ("xyzzy love", "xyzzy")
+    // and all missed — the report names only "xyzzy", the word the deepest
+    // reached position actually got stuck on, not the whole attempt list.
     expect(result).toEqual({
       ok: false,
-      unmatched: ["xyzzy love", "xyzzy"],
+      unmatched: ["xyzzy"],
+      reason: "no_match",
     });
   });
 
@@ -155,11 +167,85 @@ describe("PlaylistManager.matchSentence", () => {
 
     const result = await manager.matchSentence("tok", "sun moon star");
 
-    expect(result).toEqual({ ok: false, unmatched: ["star"] });
+    expect(result).toEqual({
+      ok: false,
+      unmatched: ["star"],
+      reason: "no_match",
+    });
     const starSearches = searchTracks.mock.calls.filter(
       ([, query]) => query === "star",
     );
-    expect(starSearches).toHaveLength(1);
+    // "star" is a bare word, so it gets its own page-2 retry (ADR 0015) — but
+    // only once per page: the second arrival (via the [sun][moon] path) must
+    // hit the memo, not search again.
+    expect(starSearches).toHaveLength(2);
+    expect(starSearches[1][2]).toBe(SEARCH_LIMIT);
+  });
+
+  it("retries a bare single-word miss on page 2 and finds it there (ADR 0015)", async () => {
+    const searchTracks = vi.fn(
+      async (_token: string, query: string, offset?: number) =>
+        query === "a" && offset === SEARCH_LIMIT ? [track("A")] : [],
+    );
+    const manager = makePlaylistManager({
+      sentenceEngine: createSentenceEngine(),
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: { searchTracks, ...unusedSpotifyWriteMethods },
+    });
+
+    const result = await manager.matchSentence("tok", "a");
+
+    expect(result).toEqual({
+      ok: true,
+      tracks: [{ phrase: "a", track: track("A") }],
+    });
+    expect(searchTracks).toHaveBeenCalledTimes(2);
+    expect(searchTracks).toHaveBeenNthCalledWith(1, "tok", "a");
+    expect(searchTracks).toHaveBeenNthCalledWith(2, "tok", "a", SEARCH_LIMIT);
+  });
+
+  it("only deepens candidates at or under the word bound (ADR 0015)", async () => {
+    // A live probe found multi-word phrases never benefit from a page-2
+    // retry — a real title of any length already ranks highly in Spotify's
+    // own search — so only the 1-word candidates here should ever page.
+    const searchTracks = vi.fn(
+      async (_token: string, _query: string, _offset?: number) =>
+        [] as TrackCandidate[],
+    );
+    const manager = makePlaylistManager({
+      sentenceEngine: createSentenceEngine(),
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: { searchTracks, ...unusedSpotifyWriteMethods },
+    });
+
+    await manager.matchSentence("tok", "always love you");
+
+    const deepCalls = searchTracks.mock.calls.filter(
+      ([, , offset]) => offset === SEARCH_LIMIT,
+    );
+    expect(deepCalls.length).toBeGreaterThan(0);
+    expect(
+      deepCalls.every(
+        ([, query]) => (query as string).trim().split(" ").length === 1,
+      ),
+    ).toBe(true);
+  });
+
+  it("never deepens when deepSearchMaxWords is 0", async () => {
+    const searchTracks = vi.fn(
+      async (_token: string, _query: string, _offset?: number) =>
+        [] as TrackCandidate[],
+    );
+    const manager = makePlaylistManager({
+      sentenceEngine: createSentenceEngine(),
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: { searchTracks, ...unusedSpotifyWriteMethods },
+      deepSearchMaxWords: 0,
+    });
+
+    await manager.matchSentence("tok", "a");
+
+    expect(searchTracks).toHaveBeenCalledTimes(1);
   });
 
   it("abandons a failed suffix permanently instead of re-exploring it", async () => {
@@ -205,11 +291,11 @@ describe("PlaylistManager.matchSentence", () => {
 
     const result = await manager.matchSentence("tok", "   ");
 
-    expect(result).toEqual({ ok: false, unmatched: [] });
+    expect(result).toEqual({ ok: false, unmatched: [], reason: "no_match" });
     expect(searchTracks).not.toHaveBeenCalled();
   });
 
-  it("stops searching once the search budget is exhausted and fails gracefully", async () => {
+  it("stops searching once the search budget is exhausted and reports reason: budget, not a false no_match (ADR 0015)", async () => {
     const searchTracks = vi.fn(async () => []);
     const manager = makePlaylistManager({
       sentenceEngine: createSentenceEngine(),
@@ -221,6 +307,77 @@ describe("PlaylistManager.matchSentence", () => {
     const result = await manager.matchSentence("tok", "one two three");
 
     expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("budget");
+    expect(searchTracks).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports reason: budget even when a genuine miss was recorded deeper, before the budget ran out (ADR 0015)", async () => {
+    // The depth-first search reaches deep positions *early*, while the budget
+    // is still healthy, and only exhausts it later while backtracking through
+    // shallower ones. Here "aa bb" hits, so the loop reaches index 2 and
+    // genuinely searches "cc" (both pages) — a real miss at the deepest
+    // position. Only afterwards, having backtracked to "aa" + "bb cc", is a
+    // lookup ("bb") refused a search by the budget.
+    //
+    // Blaming the deepest *recorded* miss would report a confident "no song is
+    // titled cc" and hide the give-up entirely. The give-up is a property of
+    // the whole search, so it is tracked the moment a lookup is denied — not
+    // inferred from which position failed last, and not from
+    // `searchesUsed >= maxSearches` either, which is also true of a search that
+    // finished exhaustively and merely spent its last search doing so.
+    const catalog: Record<string, string[]> = {
+      "aa bb": ["Aa Bb"],
+      aa: ["Aa"],
+    };
+    const searchTracks = vi.fn(
+      async (_token: string, query: string, _offset?: number) =>
+        (catalog[query] ?? []).map(track),
+    );
+    const manager = makePlaylistManager({
+      sentenceEngine: createSentenceEngine(),
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: { searchTracks, ...unusedSpotifyWriteMethods },
+      // Exactly enough for: "aa bb cc", "aa bb", "cc" ×2 (page 1 + page 2),
+      // "aa", "bb cc" — leaving "bb" to be refused.
+      maxSearches: 6,
+    });
+
+    const result = await manager.matchSentence("tok", "aa bb cc");
+
+    expect(result).toEqual({
+      ok: false,
+      // The deepest genuine miss is still the word named...
+      unmatched: ["cc"],
+      // ...but the failure is honestly attributed to the give-up.
+      reason: "budget",
+    });
+    expect(searchTracks).toHaveBeenCalledTimes(6);
+  });
+
+  it("reports reason: no_match when the search finishes exhaustively on its last search", async () => {
+    // The mirror of the case above: the budget is fully spent, but no lookup
+    // was ever refused — the search completed. `searchesUsed >= maxSearches`
+    // is true here, so using that as the give-up signal would cry "budget" at
+    // a search that actually finished and genuinely found nothing.
+    const searchTracks = vi.fn(
+      async (_token: string, _query: string, _offset?: number) =>
+        [] as TrackCandidate[],
+    );
+    const manager = makePlaylistManager({
+      sentenceEngine: createSentenceEngine(),
+      spotifyEngine: createSpotifyEngine(),
+      spotifyResource: { searchTracks, ...unusedSpotifyWriteMethods },
+      // "zz" is one word: page 1 + page 2 = exactly 2 searches, then done.
+      maxSearches: 2,
+    });
+
+    const result = await manager.matchSentence("tok", "zz");
+
+    expect(result).toEqual({
+      ok: false,
+      unmatched: ["zz"],
+      reason: "no_match",
+    });
     expect(searchTracks).toHaveBeenCalledTimes(2);
   });
 });
@@ -336,9 +493,11 @@ describe("PlaylistManager.matchSentence progress events (ADR 0013)", () => {
 
     expect(events.at(-1)).toEqual({
       type: "done",
-      searches: 1,
+      // page 0 + the page-2 retry for this bare word (ADR 0015).
+      searches: 2,
       ok: false,
       unmatched: ["xyzzy"],
+      reason: "no_match",
     });
   });
 
@@ -461,7 +620,11 @@ describe("PlaylistManager.previewSentence", () => {
 
     const result = await deps.manager.previewSentence("user-1", "xyzzy");
 
-    expect(result).toEqual({ ok: false, unmatched: ["xyzzy"] });
+    expect(result).toEqual({
+      ok: false,
+      unmatched: ["xyzzy"],
+      reason: "no_match",
+    });
   });
 
   it("propagates a token-acquisition failure without searching", async () => {

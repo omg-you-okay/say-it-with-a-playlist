@@ -33,6 +33,7 @@ const DEFAULT_SUBSTITUTIONS: Record<string, string> = {
   nine: "9",
   ten: "10",
   and: "&",
+  too: "2",
   be: "b",
   see: "c",
   why: "y",

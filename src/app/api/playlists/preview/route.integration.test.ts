@@ -157,7 +157,7 @@ describe("POST /api/playlists/preview", () => {
     expect(response.status).toBe(401);
   });
 
-  it("streams a terminal done:false with the unmatched phrases on a no-match sentence", async () => {
+  it("streams a terminal done:false with the single stuck word on a no-match sentence (ADR 0015)", async () => {
     stubSpotify({});
     const { sessionToken } = await seedLoggedInUser();
 
@@ -169,9 +169,11 @@ describe("POST /api/playlists/preview", () => {
     const events = await readEvents(response);
     expect(events.at(-1)).toEqual({
       type: "done",
-      searches: 1,
+      // page 0 + the page-2 retry for this bare word (ADR 0015).
+      searches: 2,
       ok: false,
       unmatched: ["xyzzy"],
+      reason: "no_match",
     });
   });
 

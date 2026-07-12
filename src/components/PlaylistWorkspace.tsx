@@ -28,7 +28,12 @@ type Phase =
   | { step: "input" }
   | { step: "searching" }
   | { step: "previewed"; tracks: MatchedTrack[] }
-  | { step: "unmatched"; unmatched: string[] }
+  | {
+      step: "unmatched";
+      unmatched: string[];
+      reason: "no_match" | "budget";
+      searches: number;
+    }
   | { step: "creating"; tracks: MatchedTrack[] }
   | { step: "created"; tracks: MatchedTrack[]; url: string }
   | { step: "error"; message: string };
@@ -212,7 +217,12 @@ export function PlaylistWorkspace({
           });
           liveRef.current = { ...liveRef.current, trying: null };
           publishNow();
-          setPhase({ step: "unmatched", unmatched: event.unmatched });
+          setPhase({
+            step: "unmatched",
+            unmatched: event.unmatched,
+            reason: event.reason,
+            searches: event.searches,
+          });
         }
         break;
       }
@@ -391,8 +401,18 @@ export function PlaylistWorkspace({
                   <p className="mb-1 font-medium text-destructive">
                     Couldn&apos;t find tracks for the whole sentence.
                   </p>
+                  {/* ADR 0015: the deepest position the search reached is
+                      provably where its own one-word candidate missed, so
+                      there's exactly one word to blame — never a list of
+                      every grouping tried on the way there. A budget give-up
+                      is named honestly rather than blamed on a word that was
+                      never actually searched. */}
                   <p className="text-muted-foreground">
-                    Try rewording: {phase.unmatched.join(", ")}
+                    {phase.reason === "budget"
+                      ? `Gave up after ${phase.searches} search${phase.searches === 1 ? "" : "es"} — try a shorter or simpler sentence.`
+                      : phase.unmatched[0]
+                        ? `No song is titled “${phase.unmatched[0]}” — try rewording that word.`
+                        : "Couldn't cover the sentence — try rewording it."}
                   </p>
                 </div>
               ) : (

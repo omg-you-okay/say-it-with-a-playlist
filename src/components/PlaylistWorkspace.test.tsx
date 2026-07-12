@@ -228,4 +228,52 @@ describe("PlaylistWorkspace live search", () => {
     // there were 1 try and 6 searches here, and the log must say 6.
     expect(await screen.findByText(/6 searches ·/)).toBeVisible();
   });
+
+  it("names the single stuck word rather than listing every grouping tried (ADR 0015)", async () => {
+    await startSearch("i am eating a quesadilla");
+
+    preview.emit({
+      type: "tokenised",
+      words: 5,
+      tokens: ["i", "am", "eating", "a", "quesadilla"],
+    });
+    preview.emit({
+      type: "done",
+      searches: 20,
+      ok: false,
+      unmatched: ["a"],
+      reason: "no_match",
+    });
+    preview.close();
+
+    expect(
+      await screen.findByText(
+        /No song is titled “a” — try rewording that word\./,
+      ),
+    ).toBeVisible();
+  });
+
+  it("names a budget give-up honestly instead of blaming an unsearched word (ADR 0015)", async () => {
+    await startSearch("a very long sentence");
+
+    preview.emit({
+      type: "tokenised",
+      words: 4,
+      tokens: ["a", "very", "long", "sentence"],
+    });
+    preview.emit({
+      type: "done",
+      searches: 100,
+      ok: false,
+      unmatched: ["a"],
+      reason: "budget",
+    });
+    preview.close();
+
+    expect(
+      await screen.findByText(
+        "Gave up after 100 searches — try a shorter or simpler sentence.",
+      ),
+    ).toBeVisible();
+  });
 });
