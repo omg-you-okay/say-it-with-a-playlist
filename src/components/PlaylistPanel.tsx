@@ -98,7 +98,10 @@ export function PlaylistPanel({
           return (
             <li
               key={row.key}
-              className={`flex items-center gap-4 border-b border-border px-4 py-3 last:border-b-0 ${
+              // `relative` contains the sr-only status span below — see the note
+              // in ConsoleBox: an unanchored sr-only element escapes this list's
+              // scroll box and stretches the page.
+              className={`relative flex items-center gap-4 border-b border-border px-4 py-3 last:border-b-0 ${
                 searching ? "bg-muted" : ""
               }`}
             >

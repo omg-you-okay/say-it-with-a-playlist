@@ -71,8 +71,13 @@ function LogView({ log, className }: { log: LogLine[]; className?: string }) {
           approximate, so following the log lands short of the last line. The
           list is capped at MAX_LOG_LINES short rows — laying them all out is
           cheaper than getting the scroll wrong. */}
+      {/* `relative` is load-bearing, not decoration: the sr-only span below is
+          `position: absolute`, and with no positioned ancestor it anchors to the
+          initial containing block — escaping this list's overflow and stretching
+          the document by one span per log line. That is a phantom page scroll
+          that grows with every search attempt. */}
       {log.map((line) => (
-        <li key={line.id} className="flex gap-3">
+        <li key={line.id} className="relative flex gap-3">
           {/* Fixed column: the design's 52px clipped "tokenise" to "token". */}
           <span
             className={`w-[62px] shrink-0 ${KIND_COLOR[line.kind]}`}
@@ -147,7 +152,9 @@ export function ConsoleBox({
       // w-full, not just flex-1: the wrapper is a flex column, so without an
       // explicit width this box would shrink to its content instead of filling
       // the rail.
-      className={`flex w-full min-w-0 flex-col overflow-hidden rounded-lg bg-console ${
+      // `relative` anchors the sr-only label and live-status region inside this
+      // box rather than the document.
+      className={`relative flex w-full min-w-0 flex-col overflow-hidden rounded-lg bg-console ${
         expanded ? "min-h-0 flex-1" : ""
       }`}
       aria-label="Search console"

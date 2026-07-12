@@ -461,6 +461,15 @@ restyled in place. New `SentenceStrip` / `PlaylistPanel` / `ConsoleBox` / `Histo
      the console **docked to the viewport bottom** (one console, repositioned at the breakpoint —
      not rendered twice), history behind a disclosure, and the expanded log taking the whole screen
      (the phone equivalent of taking the rail).
+- **Gotcha worth not re-introducing — `sr-only` needs a positioned ancestor.** Tailwind's `sr-only`
+  is `position: absolute`; with no positioned ancestor it anchors to the **initial containing block**
+  (the document), not to the box it appears to live in. The per-line `<span class="sr-only">` in the
+  log therefore escaped the log's `overflow-y-auto` and stretched the page by one span per line — a
+  phantom scroll with a growing empty gap, worse the more the matcher backtracked. Fixed by making
+  the log `<li>`, the track-row `<li>` and the console `<section>` `relative`. **Any new `sr-only`
+  inside a scrolling box needs the same.** Not covered by a test: jsdom has no layout engine, so
+  nothing in the suite can see it — it took measuring `getBoundingClientRect` in a real browser. A CI
+  e2e (already deferred, Iteration 5) would be the thing that catches this class of bug.
 - **`web-design-guidelines` audit findings fixed:** no `<h1>` existed at all on the logged-in page
   (the rail wordmark was a `<p>`, orphaning every `<h2>`) — the wordmark is now the `h1`; straight
   quotes in the log where the panel used curly; plus a skip link, `color-scheme: light`,
