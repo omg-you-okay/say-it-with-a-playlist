@@ -125,19 +125,23 @@ This is as important as the code itself; the project deliberately practices prof
 3. **Playlist creation** — create playlist, add tracks, persist history, end-to-end generate endpoint
 4. **Frontend** — login button, OAuth callback handling, sentence input, result display, loading and error states
 5. **Persistence & history** — past-playlists view
-6. **UX overhaul** — designed, polished frontend via a Figma-via-MCP design round-trip; pulls in **manual song replacement** (swap a matched track in the preview) as a UX-driven feature. Genre filtering stays out of scope. _(Reframed 2026-07-11 from the original "Advanced / explicitly out of MVP scope" phase — see `docs/roadmap.md` Iteration 6 for the live workflow and decisions.)_
+6. **UX overhaul** — designed, polished frontend via a Figma-via-MCP design round-trip. Its centrepiece is a **live streaming progress view**: the decomposition loop emits progress as it searches, so the user watches the sentence get carved into real song titles instead of staring at a spinner. Manual song replacement and album art were briefly in scope and are **out** again (the agreed design has neither); genre filtering was never in scope. _(Reframed 2026-07-11 from the original "Advanced / explicitly out of MVP scope" phase; scope re-cut 2026-07-12 once the design landed — see `docs/roadmap.md` Iteration 6 for the live workflow and decisions.)_
 
 ---
 
 ## 10. Non-Goals (MVP)
 
 - Genre filtering
+- Manual song replacement (swapping a matched track)
+- Album art anywhere in the UI
 - Streaming platforms other than Spotify
 - Social features (sharing/following)
 - Native mobile app
 
-_(Manual song replacement after generation was a non-goal through the MVP phases (0–5); it
-was pulled into scope as part of the Iteration 6 UX overhaul — see §9 and `docs/roadmap.md`.)_
+_(Manual song replacement and album art were pulled into the Iteration 6 UX overhaul on
+2026-07-11 and dropped again on 2026-07-12: the agreed design contains neither, and the
+iteration's effort goes into the live streaming progress view instead. See §9 and
+`docs/roadmap.md` Iteration 6 → "Filed away".)_
 
 ---
 

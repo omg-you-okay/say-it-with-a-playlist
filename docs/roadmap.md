@@ -213,13 +213,30 @@ added to `.mcp.json`. 6 new tests → suite 150 (4 real-Postgres `PlaylistResour
 
 ---
 
-## Iteration 6 — UX overhaul 🚧 IN PROGRESS (Setup phase)
+## Iteration 6 — UX overhaul 🚧 IN PROGRESS (Setup ✅ · Design ✅ · Implement next)
 
 Reframes the old "Advanced" iteration (scope note kept at the foot of this section) as a
 UX-driven push (owner request, 2026-07-11, kicked off after Iteration 5 merged): make the app
-feel like a real product — a designed, polished frontend with real UX care. Likely pulls in
-**manual song replacement** (swap a matched track in the preview) as a UX-driven feature;
-genre filtering stays out of scope.
+feel like a real product — a designed, polished frontend with real UX care.
+
+**Scope changed materially once the owner's sketch arrived (2026-07-12) — read this before
+planning Implement:**
+
+- **Manual song replacement (track swap) is DROPPED.** So is **album art**. The owner's design
+  contains neither, and history stays text-only. This deletes the whole
+  `SpotifySearchResponse → TrackCandidate → MatchedTrack → wire → UI` widening the earlier
+  version of this section called for, and it also dodges Spotify CDN URL rot on old history
+  rows. CLAUDE.md §9/§10 were corrected to match — song replacement is a **non-goal** again.
+  Genre filtering remains out of scope (unchanged).
+- **A live streaming progress view is ADDED**, and it is the centrepiece. The earlier claim in
+  this section that the loading state is _"genuinely frontend-only"_ was **wrong**: the design
+  asks for the phrase currently being searched, per-track states resolving one by one, and a
+  running log ("queuing, breaking, number of attempts"). That is `PlaylistManager`'s
+  backtracking loop's internal state, live — and `POST /api/playlists/preview` currently goes
+  quiet for seconds and returns one finished blob. See "Implement phase" below.
+
+Net effect: Implement is **less** full-stack surface than feared (no art/swap thread) but gains
+one genuinely new capability (streaming).
 
 **Decisions (2026-07-11 discussion):**
 
@@ -251,53 +268,111 @@ genre filtering stays out of scope.
   their claude.ai account. Together they cover the design → implement → verify loop; nothing
   else needed.
 
-**Workflow:**
+### A. Setup ✅ DONE (PR #22)
 
-- **A. Setup** (this session): install the three skills above ✅; branch `feature/ux-overhaul` ✅.
-- **B. Design in Figma** (gated on owner input: overview + sketches, not yet provided):
-  load the mandatory `/figma-use` skill before any `use_figma` call; `whoami` to confirm
-  Figma auth; `create_new_file` → one Figma file for the project. **Round 1 — direction:**
-  2–3 distinct visual directions (typography, color, layout, vibe) as side-by-side frames,
-  owner picks/annotates in Figma. **Round 2 — screens:** frames for every UI state in the
-  chosen direction — logged-out, input, matching/loading, preview (album art + track-swap
-  affordance), unmatched, creating, created, history list, empty history, error states;
-  desktop + mobile. Iterate on Figma comments until agreed. Token hygiene: `get_screenshot`
-  to check results; `get_design_context` only per-frame during implementation.
-- **C. Implement** (normal iteration discipline, one session per chunk): implement against
-  the agreed Figma frames; shadcn/ui + Tailwind (ADR 0001); frontend stays a thin client of
-  the existing preview/create/history endpoints. Track-swap needs a small API addition
-  (alternative candidates per phrase) — design within the iDesign layering: PlaylistManager
-  orchestrates, engines stay pure, no layer skipping (CLAUDE.md §4, ADR 0009/0010). Tests
-  alongside (CLAUDE.md §7); verify with Playwright MCP driving the full flow (login →
-  sentence → preview → swap → create → history) at desktop + mobile viewports, screenshots
-  compared against the Figma frames.
+Three design skills installed; branch cut. (Note: `feature/ux-overhaul` went stale — it holds
+the pre-squash commits of what merged as `fd4d864`. Design landed on `feature/ux-design` off
+`main` instead; the old branch can be deleted.)
 
-**UX gaps already spotted in the current UI:**
+### B. Design ✅ DONE (2026-07-12)
 
-- **No album art in the preview list** (it's plain text). Spotify's search response carries
-  `album.images`, but `SpotifyResource.searchTracks` maps it away — the typed slice is
-  `TrackCandidate = { id, uri, name, artistNames }`. So this is **not** a frontend-only change:
-  it needs `SpotifySearchResponse` + `TrackCandidate` widened, threaded through `MatchedTrack`
-  and the preview/create wire shape, and mirrored in the UI's local type (ADR 0008 pattern).
-  Resource → Manager → UI, no layer skipping.
-- **No way to swap a matched track** (first hit is forced) — needs the API addition noted in
-  step C (alternative candidates per phrase).
-- **Loading states are just button-label swaps** — no delight moment when the sentence "spells
-  out". This one genuinely is frontend-only.
+**Figma file:** https://www.figma.com/design/L0V2UO8eUMGVek76t5rfBV — `01 · Tokens`,
+`02 · Screens — Desktop` (v1 at y=0, v2 y=1000/2000, **v3 y=4000 is the agreed design**),
+`03 · Screens — Mobile` (v1 only, stale — redo on the v3 concept during Implement).
 
-Frontend surfaces: `src/app/page.tsx`, `src/components/PlaylistGenerator.tsx`,
-`src/components/PlaylistHistory.tsx`, `src/app/globals.css`, `src/components/ui/*`. Backend
-surfaces (album art + track swap): `src/server/playlist/resources/SpotifyResource.ts`,
-`src/server/playlist/managers/PlaylistManager.ts`, and the preview/create route handlers.
+Round 1 (competing directions) was **cancelled**: the owner arrived with a low-fi sketch they
+already liked, so the art direction was settled and the job became refine + extend, not pitch.
 
-- **Done when (Setup phase):** skills installed and confirmed loadable, this section lands
-  on `main`, branch exists. ✅ once merged.
-- **Done when (Design phase):** owner has agreed on a visual direction and full screen set
-  in Figma.
-- **Done when (Implement phase):** a logged-in user can complete the full flow, including
-  track swap, against the agreed design; Playwright screenshots match the Figma frames at
-  desktop + mobile.
+**The concept (v3, frames `D1`–`D3`):**
 
-Old scope note (superseded by the above, kept for history): manual song replacement after
-generation · genre filtering was originally tracked for visibility only, not built during
-MVP (CLAUDE.md §10 non-goals). Genre filtering remains out of scope.
+- **The white canvas is the artifact; the black box is the machine.** Black means exactly one
+  thing — live machinery — so the canvas has **no status bar** at all.
+- **The black box has two modes.** _Input:_ you type, footer reads `↵ spell it out`. On submit
+  it becomes _logger:_ the sentence freezes (that is _why_ the input is disabled — it is now
+  the readout), and the footer becomes the expand toggle (`▴ show log` / `▾ hide log`, plus
+  `‹ new sentence` to return to input mode). Expanded, it takes the rail.
+- **The log is semantically typed and honest:** `tokenise` / `try` / `hit` (green) / `miss`
+  (red) / `split` (amber) / `done`. It narrates the real algorithm — longest-first at the span
+  cap, miss, split into shorter spans, retry.
+- **The playlist panel owns its own header and footer.** Create + Private/Public live in that
+  **footer**, because visibility is a property of the playlist and Create is that list's
+  terminal action — not homeless global controls. Rows scroll between a fixed header and fixed
+  footer, so Create never drifts off-screen on a long sentence.
+- **The sentence strip** above the list shows the sentence carved by the current grouping, so
+  the backtracking stays visible without the list becoming a wall of boxes.
+- **Type:** IBM Plex Mono, single family, hierarchy from weight/size/state-colour. No second face.
+
+**Design decisions worth not re-deriving:**
+
+- **Palette = Radix Colors** (radix-ui.com/colors) — Sand / Grass / Red. Chosen over hand-picked
+  hexes because the scales guarantee contrast: the first pass used `#8A8A85` for muted text,
+  which **failed contrast at ~3:1**; `sand-11` (`#63635E`) is 5.5:1 on white.
+- **Spotify green (`#1ED760`) is CTA-only, never a semantic colour.** Spotify's design
+  guidelines (developer.spotify.com/documentation/design) forbid using their green for
+  non-Spotify UI, so "found" uses Radix Grass instead. CTA copy must be one of their approved
+  strings — **`PLAY ON SPOTIFY`**, not an invented label. Their logo must appear as attribution
+  on Spotify-derived content (the frames carry a placeholder slot; drop in the official asset —
+  recreating or altering the mark is forbidden). Their metadata sizing rules (track ≤23 chars,
+  artist ≤18) size the track row.
+- **The input's character counter reads `n / 100`** because ADR 0003 caps the playlist name at
+  100 chars and the name _is_ the sentence. The UI limit is the code's limit, not an invented one.
+
+**Known gaps in the Figma file — accepted, not blocking.** Figma's Starter-plan MCP call limit
+ended the session's writes early; the owner reviewed what was there and **signed off on v3 as
+it stands** (2026-07-12) rather than spend another session completing the file. The design
+intent is fully established by `D1`–`D3`; the gaps below are variations to be resolved in code,
+where they are easier to get right anyway. Do **not** treat them as open design questions:
+
+- **Long-sentence scroll case and the created state have no frames.** Both are settled in
+  principle: scroll = the playlist panel's fixed header/footer with `overflow-y: auto` on the
+  rows between them (so Create never drifts off-screen); created = a footer swap — the
+  visibility toggle becomes static text, `Create playlist` becomes `PLAY ON SPOTIFY`.
+- **Cosmetic bug in `D2`/`D3`:** the log's kind column is 52px, so `tokenise` clips to `token`.
+  It needs ~62px. Figma artefact only — do not reproduce it in code.
+- **Mobile frames are stale v1.** Redo them on the v3 concept during Implement. The rail must
+  collapse: history behind a disclosure, and the black box (input/logger) docks to the bottom.
+
+### C. Implement — next (one session per chunk)
+
+shadcn/ui + Tailwind (ADR 0001). Tests alongside (CLAUDE.md §7).
+
+**The long pole is streaming preview.** `PlaylistManager.matchSentence` must **emit progress
+events** as it searches; `POST /api/playlists/preview` must **stream** them (SSE or NDJSON)
+instead of returning one blob; the client renders track state and the log from the stream.
+Architecturally clean: the Manager already owns the orchestration loop (CLAUDE.md §4), so
+emitting from it violates no iDesign rule — Engines stay pure, `SpotifyResource` untouched, no
+layer skipping.
+
+- **Owes ADR 0013** — streaming preview + the progress-event contract. It changes ADR 0012's
+  preview wire contract (preview is no longer a single JSON response), so it is a locked
+  decision that must be logged, not an implementation detail.
+- **Accessibility is an acceptance criterion, not a nicety.** The frames set the log at **11px
+  — too small; use ≥12px.** Every screen must survive **200% zoom** without truncation, keep
+  visible keyboard focus, and respect `prefers-reduced-motion` (the chip/row re-flow is the
+  whole delight moment, so it needs a static fallback). Run the `web-design-guidelines` skill
+  against the **code** once it exists — it audits UI code, so it was deliberately _not_ run
+  against the Figma file.
+- **Frontend surfaces:** `src/app/page.tsx`, `src/components/PlaylistGenerator.tsx`,
+  `src/components/PlaylistHistory.tsx`, `src/app/globals.css`, `src/components/ui/*`.
+  `globals.css` is still **stock shadcn** (every colour zero-chroma) with a hardcoded
+  `text-red-700` blackletter title in `page.tsx` — the Radix token layer replaces both.
+- **Backend surfaces:** `src/server/playlist/managers/PlaylistManager.ts` (emit progress) and
+  `src/app/api/playlists/preview/route.ts` (stream it). `SpotifyResource` and both Engines are
+  **unchanged** — the art/swap widening is cancelled.
+- **Verify** with Playwright MCP driving the full flow (login → sentence → live search →
+  create → history) at desktop + mobile, against the v3 frames.
+
+**Done when (Setup):** skills installed, section on `main`, branch exists. ✅
+**Done when (Design):** owner has agreed the visual direction and screen set in Figma. ✅
+**Done when (Implement):** a logged-in user completes the whole flow in the browser against the
+agreed design, watching the search happen live; Playwright screenshots match the v3 frames at
+desktop + mobile.
+
+### Filed away (not doing)
+
+Manual song replacement and album art — pulled into this iteration on 2026-07-11, **dropped on
+2026-07-12** when the design landed without them. Genre filtering remains a non-goal
+(CLAUDE.md §10). If swap is ever revived: `SpotifyResource.searchTracks` already fetches **50**
+results per search and `SpotifyEngine.findMatch` throws all but the first away (`tracks.find`),
+so alternatives cost **zero** extra Spotify calls and need no new endpoint — and since every
+alternative is title-equal under ADR 0003, a swap can never break the sentence.
