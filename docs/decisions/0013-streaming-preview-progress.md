@@ -109,3 +109,21 @@ response has already been sent with `200` and headers are on the wire. Mid-strea
   terminal `done` actually reports. `split` fires whenever the loop abandons a candidate at an
   index and moves to a shorter grouping there, whether the cause was a miss or a hit whose
   remainder dead-ended — the client prunes its positional list from that index on either way.
+- **Iteration 6, Chunk 2 added two more, also additive** — both exist because the agreed design
+  displays something the client cannot derive without lying:
+  - **`searches` on `done`** — the real count of distinct outbound Spotify searches, the same number
+    the `maxSearches` budget meters. The design's terminal log line reads `15 searches · 13.0s`.
+    Counting `try` events client-side would **overstate** it, because the per-request memo serves a
+    re-tried phrase without searching again (one live run: 28 events, 15 searches). Elapsed time is
+    _not_ on the wire — the client measures it from submit, which it legitimately knows.
+  - **`tokens` on `tokenised`** — the normalized word list. The sentence strip greys the words the
+    loop has not reached yet, and re-splitting the raw sentence in the browser would duplicate
+    `SentenceEngine`'s normalization and drift from it. `words` (the count) is redundant with it but
+    **kept**, because this ADR locked that field and widening additively is cheaper than a breaking
+    change for one integer.
+
+  These are additive fields on an already-locked shape, not new architectural decisions — recorded
+  here only because the event examples above predate them. The shape is still declared in three
+  places (Manager, route, `src/lib/preview-stream.ts`) with nothing linking them; a change that
+  type-checks on both sides can still break at runtime, and the preview route's integration test
+  remains the only guard.

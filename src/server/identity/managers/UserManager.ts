@@ -40,10 +40,22 @@ export interface CallbackResult {
   sessionToken: string;
 }
 
+/**
+ * What Identity will say about a user to anyone who asks. Deliberately narrower
+ * than the resource's `AppUser` — the email and the Spotify id are Identity's
+ * business, and nothing outside it has a reason to see them.
+ */
+export interface UserProfile {
+  id: string;
+  displayName: string | null;
+}
+
 export interface UserManager {
   beginLogin(): BeginLoginResult;
   handleCallback(input: CallbackInput): Promise<CallbackResult>;
   getFreshAccessToken(userId: string): Promise<string>;
+  /** The signed-in user's public-facing details, or null if the id is unknown. */
+  getProfile(userId: string): Promise<UserProfile | null>;
 }
 
 export interface UserManagerDeps {
@@ -119,6 +131,12 @@ export function makeUserManager(deps: UserManagerDeps): UserManager {
 
       const sessionToken = await createSession(user.id);
       return { userId: user.id, sessionToken };
+    },
+
+    async getProfile(userId) {
+      const user = await userResource.findById(userId);
+      if (!user) return null;
+      return { id: user.id, displayName: user.displayName };
     },
 
     async getFreshAccessToken(userId) {

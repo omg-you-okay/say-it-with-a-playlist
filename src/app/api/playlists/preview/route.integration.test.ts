@@ -122,9 +122,14 @@ describe("POST /api/playlists/preview", () => {
     expect(response.headers.get("Content-Type")).toBe("application/x-ndjson");
     const events = await readEvents(response);
 
-    expect(events[0]).toEqual({ type: "tokenised", words: 1 });
+    expect(events[0]).toEqual({
+      type: "tokenised",
+      words: 1,
+      tokens: ["hello"],
+    });
     expect(events.at(-1)).toEqual({
       type: "done",
+      searches: 1,
       ok: true,
       tracks: [
         {
@@ -164,6 +169,7 @@ describe("POST /api/playlists/preview", () => {
     const events = await readEvents(response);
     expect(events.at(-1)).toEqual({
       type: "done",
+      searches: 1,
       ok: false,
       unmatched: ["xyzzy"],
     });

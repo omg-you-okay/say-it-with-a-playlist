@@ -9,6 +9,7 @@ describe("UserManagerResource.getFreshAccessToken", () => {
       userManager: {
         beginLogin: vi.fn(),
         handleCallback: vi.fn(),
+        getProfile: vi.fn(),
         getFreshAccessToken,
       },
     });
@@ -25,6 +26,7 @@ describe("UserManagerResource.getFreshAccessToken", () => {
       userManager: {
         beginLogin: vi.fn(),
         handleCallback: vi.fn(),
+        getProfile: vi.fn(),
         getFreshAccessToken: vi.fn().mockRejectedValue(error),
       },
     });

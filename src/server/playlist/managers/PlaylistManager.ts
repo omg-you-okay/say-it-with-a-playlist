@@ -63,7 +63,13 @@ export type CreatePlaylistResult = { ok: true; url: string };
 // grouping the loop is currently trying at that position, not necessarily
 // part of the eventual answer.
 export type PreviewEvent =
-  | { type: "tokenised"; words: number }
+  // `tokens` is the normalized word list the loop actually works on. The client
+  // needs it to show the part of the sentence not yet reached, and cannot
+  // derive it: re-splitting the raw sentence in the browser would duplicate
+  // SentenceEngine's normalization and drift from it. `words` (the count) is
+  // kept alongside it rather than replaced — ADR 0013 locked that field, and
+  // widening the event additively is the same move Chunk 1 made for `index`.
+  | { type: "tokenised"; words: number; tokens: string[] }
   | { type: "try"; index: number; phrase: string; words: number }
   | {
       type: "hit";
@@ -74,7 +80,12 @@ export type PreviewEvent =
     }
   | { type: "miss"; index: number; phrase: string }
   | { type: "split"; index: number; phrase: string }
-  | ({ type: "done" } & SentenceMatchResult);
+  // `searches` is the count of *distinct outbound Spotify searches* this
+  // request actually spent — the same number the maxSearches budget meters.
+  // The client cannot derive it: the per-request memo means a repeated phrase
+  // emits a `try` without searching again, so counting `try` events would
+  // overstate the real cost.
+  | ({ type: "done"; searches: number } & SentenceMatchResult);
 
 export type OnProgress = (event: PreviewEvent) => void;
 
@@ -139,10 +150,10 @@ export function makePlaylistManager(
     onProgress?: OnProgress,
   ): Promise<SentenceMatchResult> {
     const words = sentenceEngine.tokenize(sentence);
-    onProgress?.({ type: "tokenised", words: words.length });
+    onProgress?.({ type: "tokenised", words: words.length, tokens: words });
     if (words.length === 0) {
       const result: SentenceMatchResult = { ok: false, unmatched: [] };
-      onProgress?.({ type: "done", ...result });
+      onProgress?.({ type: "done", searches: 0, ...result });
       return result;
     }
 
@@ -241,7 +252,7 @@ export function makePlaylistManager(
     const result: SentenceMatchResult = tracks
       ? { ok: true, tracks }
       : { ok: false, unmatched: deepestFailPhrases };
-    onProgress?.({ type: "done", ...result });
+    onProgress?.({ type: "done", searches: searchesUsed, ...result });
     return result;
   }
 

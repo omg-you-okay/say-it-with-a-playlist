@@ -336,7 +336,7 @@ where they are easier to get right anyway. Do **not** treat them as open design 
 
 shadcn/ui + Tailwind (ADR 0001). Tests alongside (CLAUDE.md §7).
 
-#### Chunk 1 — streaming spine ✅ DONE (branch `feature/streaming-preview`, not yet merged)
+#### Chunk 1 — streaming spine ✅ DONE (PR #24, merged to `main` as `6482c4f`)
 
 The long pole, per [ADR 0013](decisions/0013-streaming-preview-progress.md) (amends ADR 0012):
 `PlaylistManager.matchSentence`/`previewSentence` gained an **optional injected `onProgress`
@@ -402,32 +402,96 @@ no-trailing-newline cases.
   runtime. The preview route's integration test asserting exact event shapes is currently the only
   guard — add a contract test if the shape changes again.
 
-#### Chunk 2 — visual overhaul — next
+#### Chunk 2 — visual overhaul ✅ DONE (branch `feature/visual-overhaul`)
 
-- **Frontend surfaces:** `src/app/page.tsx`, `src/components/PlaylistGenerator.tsx` (restyle the
-  Chunk 1 state machine, not rebuild it), `src/components/PlaylistHistory.tsx`,
-  `src/app/globals.css`, `src/components/ui/*`. `globals.css` is still **stock shadcn** (every
-  colour zero-chroma) with a hardcoded `text-red-700` blackletter title in `page.tsx` — the Radix
-  Sand/Grass/Red token layer + IBM Plex Mono replace both. Black-box logger / sentence-strip /
-  playlist-panel layout per the v3 frames (`D1`–`D3`); mobile redo (stale v1 frames — rebuild on
-  the v3 concept, rail collapses per the Design section's notes above).
-- **Accessibility is an acceptance criterion, not a nicety.** The frames set the log at **11px
-  — too small; use ≥12px.** Every screen must survive **200% zoom** without truncation, keep
-  visible keyboard focus, and respect `prefers-reduced-motion` (the chip/row re-flow is the whole
-  delight moment, so it needs a static fallback). Run the `web-design-guidelines` skill against
-  the **code** once it exists — it audits UI code, so it was deliberately _not_ run against the
-  Figma file.
-- **Verify** with Playwright MCP driving the full flow (login → sentence → live search → create →
-  history) at desktop + mobile, against the v3 frames.
+The v3 design, on top of Chunk 1's working state machine. **The frames are now in the repo** at
+`docs/design/D{1,2,3} · v3 …pdf` (owner-exported, because the Figma MCP Starter-plan call cap was
+already exhausted at session start — the very first call failed). Treat those PDFs as the design
+source of truth; a future session needs neither a Figma connector nor quota.
+
+Shipped: **token layer** — `globals.css` re-pointed from stock zero-chroma shadcn onto Radix
+Sand/Grass/Red/Amber, with a `--color-console-*` dark ramp for the black box and a **CTA-only**
+`--spotify` green; `layout.tsx` swapped Outfit + UnifrakturMaguntia for a single **IBM Plex Mono**.
+**Layout** — `page.tsx` stays a Server Component (session → history + profile, dates pre-formatted
+server-side so an `Intl` call can't hydrate against a different timezone) and hands one client
+`PlaylistWorkspace` the state. That workspace **owns the Chunk 1 machine and renders it into both
+columns** — the console that drives the search is in the rail, the sentence strip and playlist it
+produces are on the canvas — which is precisely why `PlaylistGenerator` had to split rather than be
+restyled in place. New `SentenceStrip` / `PlaylistPanel` / `ConsoleBox` / `HistoryRail`;
+`PlaylistGenerator` + `PlaylistHistory` retired. 170 tests (was 161).
+
+- **Two additive backend fields, both because the frames ask for something the client cannot
+  honestly invent** (same category as Chunk 1's `index`/`wordCount` — additive on an ADR
+  0013-locked shape, not a new decision):
+  - **`searches` on the terminal `done` event.** The log's `done` line reads
+    `15 searches · 13.0s`. `matchSentence` already counted `searchesUsed` for the `maxSearches`
+    budget. Counting `try` events client-side would **overstate it** — the per-request memo means a
+    re-tried phrase is not re-searched. Live-verified: one run emitted 28 events but spent 15
+    searches. (Elapsed time is client-measured; the client legitimately knows when it submitted.)
+  - **`tokens` on `tokenised`.** The strip greys the words the loop has not reached yet, and
+    re-splitting the raw sentence in the browser would duplicate `SentenceEngine`'s normalization
+    and drift from it. `words` (the count) is kept beside it rather than replaced, since ADR 0013
+    locked that field.
+- **`UserResource.findById` + `UserManager.getProfile`** — the rail names the signed-in user, and
+  `users.display_name` was written at login but never read back. `getProfile` returns a narrower
+  shape than the resource's `AppUser` (no email, no Spotify id).
+- **All four shadcn primitives (`button`/`input`/`label`/`switch`) were deleted as dead code.** The
+  v3 controls are bespoke — a pill CTA, a segmented Private/Public toggle (not a `Switch`), text-only
+  console buttons, a native `<textarea>` — and nothing imported them any more. The `shadcn` dep and
+  `components.json` stay wired so the CLI still works. This is a step away from ADR 0001's letter
+  (it names shadcn/ui as the component layer) but not its intent (Tailwind + copied-in components we
+  own); flagged rather than silently done.
+- **Component tests exist now** (`jsdom` + Testing Library, opted into per-file with a
+  `// @vitest-environment jsdom` docblock; vitest stays `node` by default). They cover the thing the
+  eye cannot check: a scripted event stream that **backtracks**, asserting the strip and the track
+  list un-place together (the ADR 0013 `try`-prunes rule, including the "no `split` for an undone hit
+  that was the last candidate" case), plus the footer swap to `PLAY ON SPOTIFY`.
+- **Three bugs the browser caught that tests and typecheck did not** — all fixed:
+  1. **The log stopped auto-scrolling.** Chunk 1's `STICK_TO_BOTTOM_PX = 24` was fine when rows were
+     one line, but v3 rows carry a detail sub-line (~34px), so the first row that overflowed left the
+     list "not at the bottom" and it never followed again. Now stickiness is tracked from real scroll
+     events instead of re-measured after each append (after an append, the distance already includes
+     the new row, so measuring then cannot tell "user scrolled away" from "a row arrived").
+  2. **`content-visibility: auto` on log rows broke the scroll.** Added on the design-audit's
+     large-list advice; with estimated off-screen heights, `scrollHeight` is approximate and
+     following the log lands *short of the last line* — the `done` line was clipped. Removed:
+     correctness beats a micro-optimization on ≤200 short rows.
+  3. **Mobile was just the desktop stacked** — console not docked, history not collapsed,
+     attribution clipped off-screen. Rebuilt on the v3 concept: rail header on top, canvas below,
+     the console **docked to the viewport bottom** (one console, repositioned at the breakpoint —
+     not rendered twice), history behind a disclosure, and the expanded log taking the whole screen
+     (the phone equivalent of taking the rail).
+- **`web-design-guidelines` audit findings fixed:** no `<h1>` existed at all on the logged-in page
+  (the rail wordmark was a `<p>`, orphaning every `<h2>`) — the wordmark is now the `h1`; straight
+  quotes in the log where the panel used curly; plus a skip link, `color-scheme: light`,
+  `theme-color`, and `touch-action: manipulation`.
+- **Playwright MCP is still unusable, and the roadmap's Chunk 1 note is wrong about why.**
+  `.mcp.json` *is* set to `--browser chromium` and Chromium *is* installed, yet the MCP server still
+  demands the `chrome` channel — this session's connection came up from a stale config and cannot be
+  reloaded from inside the session; `playwright install chrome` needs `sudo`. Verification instead
+  drove the same Chromium through the **Playwright CLI/library directly** (mint a session cookie with
+  the app's own `jose` + `SESSION_SECRET`, drive the real flow), which worked fine. **Next session:
+  check whether a fresh MCP connection picks up the chromium flag before assuming it is fixed.**
+- **Papercut worth knowing:** the integration tests `TRUNCATE users CASCADE` against the *same* local
+  DB the dev server uses, so running `pnpm test` silently logs you out of your local session.
+  `assertDisposableTestDb` protects production but not your dev login.
+- **Follow-up (not done):** the Spotify **logo** asset is still missing — only the text
+  "Content from Spotify" is rendered. Their guidelines require the mark on Spotify-derived content
+  and forbid recreating it, so the official asset must be dropped in before any public deploy.
+- **Follow-up (not done):** the NDJSON wire contract is still declared in three places (Chunk 1's
+  note). This chunk widened it twice more without a contract test, so the risk it flagged is now
+  larger, not smaller.
 
 **Done when (Setup):** skills installed, section on `main`, branch exists. ✅
 **Done when (Design):** owner has agreed the visual direction and screen set in Figma. ✅
 **Done when (Implement, Chunk 1):** the live streaming progress view works end-to-end against a
-real Spotify account, in the existing (unstyled) look. ✅ (manually browser-verified; Playwright
-MCP verification deferred to Chunk 2 alongside the visual design it needs to compare against)
+real Spotify account, in the existing (unstyled) look. ✅
 **Done when (Implement, Chunk 2):** a logged-in user completes the whole flow in the browser
-against the agreed v3 design, watching the search happen live; Playwright screenshots match the
-v3 frames at desktop + mobile.
+against the agreed v3 design, watching the search happen live; screenshots match the v3 frames at
+desktop + mobile. ✅ — live-verified against a real Spotify account: full-cover and
+backtracking-heavy sentences (`miss` → `split` → shorter span → `hit`, visibly un-placing tracks),
+preview → create → history, at 1440×900 and 390×844, plus 200% zoom (no horizontal overflow) and
+`prefers-reduced-motion` active.
 
 ### Filed away (not doing)
 

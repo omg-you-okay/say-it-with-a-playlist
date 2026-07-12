@@ -241,7 +241,7 @@ describe("PlaylistManager.matchSentence progress events (ADR 0013)", () => {
     await manager.matchSentence("tok", "Hello!", onProgress);
 
     expect(events).toEqual([
-      { type: "tokenised", words: 1 },
+      { type: "tokenised", words: 1, tokens: ["hello"] },
       { type: "try", index: 0, phrase: "hello", words: 1 },
       {
         type: "hit",
@@ -252,6 +252,7 @@ describe("PlaylistManager.matchSentence progress events (ADR 0013)", () => {
       },
       {
         type: "done",
+        searches: 1,
         ok: true,
         tracks: [{ phrase: "hello", track: track("Hello") }],
       },
@@ -335,9 +336,32 @@ describe("PlaylistManager.matchSentence progress events (ADR 0013)", () => {
 
     expect(events.at(-1)).toEqual({
       type: "done",
+      searches: 1,
       ok: false,
       unmatched: ["xyzzy"],
     });
+  });
+
+  it("reports the real number of Spotify searches, not the number of tries", async () => {
+    // Why `searches` rides on the event instead of being counted client-side
+    // from `try` events: the per-request memo means a phrase the loop has
+    // already looked up is *not* searched again, so tries overcount the real
+    // cost. Here "red red" misses, then "red" hits at index 0 — and the same
+    // "red" comes up again at index 1, where it is served from the memo.
+    const { manager, searchTracks } = makeManager({ red: ["Red"] });
+    const { onProgress, events } = collect();
+
+    await manager.matchSentence("tok", "red red", onProgress);
+
+    const done = events.at(-1);
+    expect(done?.type).toBe("done");
+    const tries = events.filter((e) => e.type === "try").length;
+    const searches = done?.type === "done" ? done.searches : -1;
+
+    expect(tries).toBe(3); // "red red", "red" @0, "red" @1
+    expect(searches).toBe(2); // the second "red" was memoized, not searched
+    // The count is the searches actually spent — exactly what the resource saw.
+    expect(searches).toBe(searchTracks.mock.calls.length);
   });
 
   it("emits no split for an undone hit that was the last candidate at its position", async () => {

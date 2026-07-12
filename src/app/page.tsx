@@ -1,12 +1,8 @@
 import { cookies } from "next/headers";
 
-import { LogoutButton } from "@/components/LogoutButton";
-import { PlaylistGenerator } from "@/components/PlaylistGenerator";
-import {
-  PlaylistHistory,
-  type HistoryEntry,
-} from "@/components/PlaylistHistory";
-import { Button } from "@/components/ui/button";
+import type { HistoryEntry } from "@/components/HistoryRail";
+import { PlaylistWorkspace } from "@/components/PlaylistWorkspace";
+import { createUserManager } from "@/server/identity/managers/UserManager";
 import { createPlaylistManager } from "@/server/playlist/managers/PlaylistManager";
 import { readSessionToken, SESSION_COOKIE } from "@/server/shared/session";
 
@@ -31,6 +27,14 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   callback_failed: "Something went wrong finishing login. Please try again.",
 };
 
+// Formatted here, on the server, rather than in the client tree: an Intl call
+// during hydration can format against a different timezone than the server
+// render used, and React would flag the mismatch.
+const DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+});
+
 export default async function Home({
   searchParams,
 }: {
@@ -43,57 +47,74 @@ export default async function Home({
       AUTH_ERROR_MESSAGES.callback_failed)
     : undefined;
 
+  if (!userId) {
+    return <LoggedOut authError={authError} />;
+  }
+
   let history: HistoryEntry[] = [];
   let historyError = false;
-  if (userId) {
-    try {
-      history = await createPlaylistManager().getHistory(userId);
-    } catch (error) {
-      console.error("Failed to load playlist history", error);
-      historyError = true;
-    }
+  try {
+    const entries = await createPlaylistManager().getHistory(userId);
+    history = entries.map((entry) => ({
+      id: entry.id,
+      sentence: entry.sentence,
+      url: entry.url,
+      trackCount: entry.tracks.length,
+      dateLabel: DATE_FORMATTER.format(entry.createdAt),
+    }));
+  } catch (error) {
+    console.error("Failed to load playlist history", error);
+    historyError = true;
+  }
+
+  // A missing profile is not worth failing the page over — the rail just falls
+  // back to a generic name.
+  let displayName: string | null = null;
+  try {
+    const profile = await createUserManager().getProfile(userId);
+    displayName = profile?.displayName ?? null;
+  } catch (error) {
+    console.error("Failed to load the user profile", error);
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
-      <div className="w-full max-w-md rounded-md border border-red-700/30 bg-sidebar-accent px-6 py-5 drop-shadow-2xl drop-shadow-gray-300">
-        <div className="mb-2 flex items-start justify-between gap-4">
-          <h1 className="font-blackletter text-4xl tracking-tight text-red-700">
-            Say It With a Playlist
-          </h1>
-          {userId && <LogoutButton />}
-        </div>
+    <PlaylistWorkspace
+      displayName={displayName}
+      history={history}
+      historyError={historyError}
+    />
+  );
+}
 
-        <p className="text-md mb-8 text-left font-outfit font-light">
+function LoggedOut({ authError }: { authError?: string }) {
+  return (
+    <main id="main" className="flex flex-1 items-center justify-center p-4">
+      <div className="flex w-full max-w-md flex-col gap-6 rounded-lg border border-border bg-card px-8 py-10">
+        <h1 className="text-lg font-semibold tracking-[0.14em] uppercase">
+          Say it with
+          <br />a playlist
+        </h1>
+
+        <p className="text-muted-foreground">
           Type a sentence and get a real Spotify playlist whose track titles —
           read in order — spell it out.
         </p>
 
         {authError && (
-          <p className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             {authError}
           </p>
         )}
 
-        {userId ? (
-          <div className="flex flex-col gap-6">
-            <PlaylistGenerator />
-            {historyError ? (
-              <p className="font-outfit text-sm text-muted-foreground">
-                Couldn&apos;t load your past playlists.
-              </p>
-            ) : (
-              <PlaylistHistory entries={history} />
-            )}
-          </div>
-        ) : (
-          // Plain <a>, not next/link: this route 307s cross-origin to Spotify's
-          // OAuth screen, and Link's client-side fetch hits a CORS wall on that
-          // redirect before falling back — a full navigation skips it entirely.
-          <Button asChild size="sm" variant="default" className="font-outfit">
-            <a href="/api/auth/login">Log in with Spotify</a>
-          </Button>
-        )}
+        {/* A plain <a>, not next/link: this route 307s cross-origin to
+            Spotify's OAuth screen, and Link's client-side fetch hits a CORS
+            wall on that redirect before falling back to a real navigation. */}
+        <a
+          href="/api/auth/login"
+          className="w-fit rounded-full bg-spotify px-5 py-2.5 text-sm font-semibold tracking-wide text-black transition-opacity hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          LOG IN WITH SPOTIFY
+        </a>
       </div>
     </main>
   );

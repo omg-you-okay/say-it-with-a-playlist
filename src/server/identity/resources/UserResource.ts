@@ -21,6 +21,8 @@ export interface UpsertUserInput {
 
 export interface UserResource {
   upsertBySpotifyId(input: UpsertUserInput): Promise<AppUser>;
+  /** The app-side user record, or null if the id matches no row. */
+  findById(id: string): Promise<AppUser | null>;
 }
 
 interface UserRow {
@@ -30,8 +32,27 @@ interface UserRow {
   email: string | null;
 }
 
+function toAppUser(row: UserRow): AppUser {
+  return {
+    id: row.id,
+    spotifyUserId: row.spotify_user_id,
+    displayName: row.display_name,
+    email: row.email,
+  };
+}
+
 export function createUserResource(pool: Pool = getPool()): UserResource {
   return {
+    async findById(id) {
+      const { rows } = await pool.query<UserRow>(
+        `SELECT id, spotify_user_id, display_name, email
+           FROM users
+          WHERE id = $1`,
+        [id],
+      );
+      return rows[0] ? toAppUser(rows[0]) : null;
+    },
+
     async upsertBySpotifyId(input) {
       const { rows } = await pool.query<UserRow>(
         `INSERT INTO users (spotify_user_id, display_name, email)
@@ -43,13 +64,7 @@ export function createUserResource(pool: Pool = getPool()): UserResource {
          RETURNING id, spotify_user_id, display_name, email`,
         [input.spotifyUserId, input.displayName, input.email],
       );
-      const row = rows[0];
-      return {
-        id: row.id,
-        spotifyUserId: row.spotify_user_id,
-        displayName: row.display_name,
-        email: row.email,
-      };
+      return toAppUser(rows[0]);
     },
   };
 }

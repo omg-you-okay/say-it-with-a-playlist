@@ -24,7 +24,10 @@ function tokenSet(overrides: Partial<SpotifyTokenSet> = {}): SpotifyTokenSet {
 function makeDeps(overrides: Partial<UserManagerDeps> = {}): {
   deps: UserManagerDeps;
   authEngine: { [K in keyof AuthEngine]: ReturnType<typeof vi.fn> };
-  userResource: { upsertBySpotifyId: ReturnType<typeof vi.fn> };
+  userResource: {
+    upsertBySpotifyId: ReturnType<typeof vi.fn>;
+    findById: ReturnType<typeof vi.fn>;
+  };
   tokenResource: {
     save: ReturnType<typeof vi.fn>;
     get: ReturnType<typeof vi.fn>;
@@ -52,6 +55,7 @@ function makeDeps(overrides: Partial<UserManagerDeps> = {}): {
   };
   const userResource = {
     upsertBySpotifyId: vi.fn(async () => user),
+    findById: vi.fn(async (): Promise<AppUser | null> => user),
   };
   const tokenResource = {
     save: vi.fn(async () => {}),
@@ -169,5 +173,21 @@ describe("UserManager.getFreshAccessToken", () => {
       "user-1",
       expect.objectContaining({ accessToken: "access-2" }),
     );
+  });
+});
+
+describe("UserManager.getProfile", () => {
+  it("returns only the public-facing fields, not the email or Spotify id", async () => {
+    const { deps } = makeDeps();
+    const profile = await makeUserManager(deps).getProfile("user-1");
+    expect(profile).toEqual({ id: "user-1", displayName: "Ada" });
+  });
+
+  it("returns null for an unknown user rather than throwing", async () => {
+    const { deps, userResource } = makeDeps();
+    userResource.findById.mockResolvedValue(null);
+    await expect(
+      makeUserManager(deps).getProfile("nobody"),
+    ).resolves.toBeNull();
   });
 });
