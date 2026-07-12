@@ -64,6 +64,23 @@ describe("UserResource.upsertBySpotifyId", () => {
   });
 });
 
+describe("UserResource.findById", () => {
+  it("round-trips the user the upsert just created", async () => {
+    const created = await users.upsertBySpotifyId({
+      spotifyUserId: "spotify-3",
+      displayName: "Ada",
+      email: "ada@example.com",
+    });
+    await expect(users.findById(created.id)).resolves.toEqual(created);
+  });
+
+  it("returns null for an id that matches no row", async () => {
+    await expect(
+      users.findById("00000000-0000-0000-0000-000000000000"),
+    ).resolves.toBeNull();
+  });
+});
+
 describe("TokenResource", () => {
   async function makeUser() {
     return users.upsertBySpotifyId({

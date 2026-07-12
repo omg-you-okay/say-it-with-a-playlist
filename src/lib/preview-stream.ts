@@ -16,7 +16,7 @@ export interface MatchedTrack {
 }
 
 export type PreviewEvent =
-  | { type: "tokenised"; words: number }
+  | { type: "tokenised"; words: number; tokens: string[] }
   | { type: "try"; index: number; phrase: string; words: number }
   | {
       type: "hit";
@@ -27,8 +27,8 @@ export type PreviewEvent =
     }
   | { type: "miss"; index: number; phrase: string }
   | { type: "split"; index: number; phrase: string }
-  | { type: "done"; ok: true; tracks: MatchedTrack[] }
-  | { type: "done"; ok: false; unmatched: string[] }
+  | { type: "done"; searches: number; ok: true; tracks: MatchedTrack[] }
+  | { type: "done"; searches: number; ok: false; unmatched: string[] }
   | { type: "error"; message: string; code?: string };
 
 /**
