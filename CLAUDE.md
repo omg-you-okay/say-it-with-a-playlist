@@ -107,13 +107,13 @@ This is as important as the code itself; the project deliberately practices prof
 
 ## 8. Formerly Open Decisions (all resolved — answers live in ADRs; do not re-decide)
 
-| Question                                  | Resolved in                                                                  |
-| ----------------------------------------- | ---------------------------------------------------------------------------- |
-| "Good enough" track-title match           | ADR 0003 — exact equality after normalization                                |
-| Behaviour when no match exists            | ADR 0003 — no playlist created; response lists the unmatched words/phrases   |
-| Frontend session strategy after OAuth     | ADR 0002 — httpOnly, SameSite=Lax signed JWT cookie; payload = app user id   |
-| Full, agreed list of substitution rules   | ADR 0003 — config-driven map in SentenceEngine (to→2, you→U, one→1…, and→&…) |
-| Auto-generated playlist naming convention | ADR 0003 — the sentence itself (≤100 chars); branding in the description     |
+| Question                                  | Resolved in                                                                                                |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| "Good enough" track-title match           | ADR 0003 — exact equality after normalization                                                              |
+| Behaviour when no match exists            | ADR 0003 — no playlist created; response lists the unmatched words/phrases                                 |
+| Frontend session strategy after OAuth     | ADR 0002 — httpOnly, SameSite=Lax signed JWT cookie; payload = app user id                                 |
+| Full, agreed list of substitution rules   | ADR 0003 — config-driven map in SentenceEngine (to→2, you→U, one→1…, and→&…); extended by ADR 0015 (too→2) |
+| Auto-generated playlist naming convention | ADR 0003 — the sentence itself (≤100 chars); branding in the description                                   |
 
 ---
 

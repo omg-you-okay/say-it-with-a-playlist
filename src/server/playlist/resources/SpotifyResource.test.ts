@@ -31,10 +31,21 @@ describe("SpotifyResource.searchTracks", () => {
     expect(parsed.searchParams.get("q")).toBe("love you");
     expect(parsed.searchParams.get("type")).toBe("track");
     expect(parsed.searchParams.get("limit")).toBe("50");
+    expect(parsed.searchParams.get("offset")).toBe("0");
     expect((init as RequestInit).headers).toEqual({
       Authorization: "Bearer token-123",
     });
     expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("sends the given offset when paging past the first page", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(searchResponse([]));
+    const resource = createSpotifyResource({ fetchFn });
+
+    await resource.searchTracks("t", "a", 50);
+
+    const parsed = new URL(fetchFn.mock.calls[0][0] as string);
+    expect(parsed.searchParams.get("offset")).toBe("50");
   });
 
   it("URL-encodes special characters in the query", async () => {

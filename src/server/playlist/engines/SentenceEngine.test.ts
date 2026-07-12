@@ -85,6 +85,7 @@ describe("SentenceEngine substitution variants (ADR 0003)", () => {
     ["nine", "9"],
     ["ten", "10"],
     ["and", "&"],
+    ["too", "2"],
     ["be", "b"],
     ["see", "c"],
     ["why", "y"],

@@ -21,8 +21,10 @@ function playlistTracksUrl(playlistId: string): string {
 const REQUEST_TIMEOUT_MS = 10_000;
 
 // Spotify's maximum page size — exact-after-normalization matching is strict,
-// so give findMatch the widest net a single request allows.
-const SEARCH_LIMIT = 50;
+// so give findMatch the widest net a single request allows. Exported so
+// PlaylistManager's deep-search retry (Iteration 7) can page to exactly the
+// next result window rather than duplicating this number.
+export const SEARCH_LIMIT = 50;
 
 // A single retry on 429 covers the occasional rate-limit spike hit during a
 // backtracking search without turning one request into an unbounded loop.
@@ -72,7 +74,12 @@ export interface PlaylistMetadataInput {
 }
 
 export interface SpotifyResource {
-  searchTracks(accessToken: string, query: string): Promise<TrackCandidate[]>;
+  /** `offset` pages past the first `limit` results (default 0). */
+  searchTracks(
+    accessToken: string,
+    query: string,
+    offset?: number,
+  ): Promise<TrackCandidate[]>;
   /** The Spotify user id of the token's owner — needed to create a playlist on their account. */
   getCurrentUserId(accessToken: string): Promise<string>;
   createPlaylist(
@@ -132,11 +139,12 @@ export function createSpotifyResource(
   }
 
   return {
-    async searchTracks(accessToken, query) {
+    async searchTracks(accessToken, query, offset = 0) {
       const params = new URLSearchParams({
         q: query,
         type: "track",
         limit: String(SEARCH_LIMIT),
+        offset: String(offset),
       });
       const res = await spotifyFetch(
         `${SEARCH_URL}?${params.toString()}`,

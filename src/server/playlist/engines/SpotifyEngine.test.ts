@@ -67,6 +67,32 @@ describe("SpotifyEngine.findMatch", () => {
     const exact = engine.findMatch("call me", [track("Call Me (Live)")]);
     expect(exact?.name).toBe("Call Me (Live)");
   });
+
+  it("prefers a clean title over one that only matches after tail-stripping", () => {
+    const hit = engine.findMatch("fox jumps", [
+      track("Fox Jumps (To the Rave)"),
+      track("Fox Jumps"),
+    ]);
+    expect(hit?.name).toBe("Fox Jumps");
+  });
+
+  it("still matches a stripped title when no clean title is present", () => {
+    const hit = engine.findMatch("fox jumps", [
+      track("Fox Jumps (To the Rave)"),
+    ]);
+    expect(hit?.name).toBe("Fox Jumps (To the Rave)");
+  });
+
+  it("prefers a clean title without widening the ADR 0003 match rule", () => {
+    // The clean-title preference compares the title *unstripped*, which on its
+    // own would let "call me live" match "Call Me (Live)" — a match ADR 0003
+    // rejects (the tail is stripped from the title before comparing, so the
+    // title is "call me"). The preference must only order tracks that already
+    // pass the rule, never admit new ones.
+    expect(
+      engine.findMatch("call me live", [track("Call Me (Live)")]),
+    ).toBeUndefined();
+  });
 });
 
 describe("SpotifyEngine.buildPlaylistMetadata", () => {

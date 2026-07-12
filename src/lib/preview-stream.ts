@@ -28,7 +28,16 @@ export type PreviewEvent =
   | { type: "miss"; index: number; phrase: string }
   | { type: "split"; index: number; phrase: string }
   | { type: "done"; searches: number; ok: true; tracks: MatchedTrack[] }
-  | { type: "done"; searches: number; ok: false; unmatched: string[] }
+  | {
+      type: "done";
+      searches: number;
+      ok: false;
+      /** The single word the search got stuck on (ADR 0015). */
+      unmatched: string[];
+      /** Genuine no-match vs. the search budget running out before the search
+       * could finish (ADR 0015) — the two read very differently to a user. */
+      reason: "no_match" | "budget";
+    }
   | { type: "error"; message: string; code?: string };
 
 /**
