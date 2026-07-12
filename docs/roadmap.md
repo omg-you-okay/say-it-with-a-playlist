@@ -454,7 +454,7 @@ restyled in place. New `SentenceStrip` / `PlaylistPanel` / `ConsoleBox` / `Histo
      the new row, so measuring then cannot tell "user scrolled away" from "a row arrived").
   2. **`content-visibility: auto` on log rows broke the scroll.** Added on the design-audit's
      large-list advice; with estimated off-screen heights, `scrollHeight` is approximate and
-     following the log lands *short of the last line* — the `done` line was clipped. Removed:
+     following the log lands _short of the last line_ — the `done` line was clipped. Removed:
      correctness beats a micro-optimization on ≤200 short rows.
   3. **Mobile was just the desktop stacked** — console not docked, history not collapsed,
      attribution clipped off-screen. Rebuilt on the v3 concept: rail header on top, canvas below,
@@ -466,13 +466,13 @@ restyled in place. New `SentenceStrip` / `PlaylistPanel` / `ConsoleBox` / `Histo
   quotes in the log where the panel used curly; plus a skip link, `color-scheme: light`,
   `theme-color`, and `touch-action: manipulation`.
 - **Playwright MCP is still unusable, and the roadmap's Chunk 1 note is wrong about why.**
-  `.mcp.json` *is* set to `--browser chromium` and Chromium *is* installed, yet the MCP server still
+  `.mcp.json` _is_ set to `--browser chromium` and Chromium _is_ installed, yet the MCP server still
   demands the `chrome` channel — this session's connection came up from a stale config and cannot be
   reloaded from inside the session; `playwright install chrome` needs `sudo`. Verification instead
   drove the same Chromium through the **Playwright CLI/library directly** (mint a session cookie with
   the app's own `jose` + `SESSION_SECRET`, drive the real flow), which worked fine. **Next session:
   check whether a fresh MCP connection picks up the chromium flag before assuming it is fixed.**
-- **Papercut worth knowing:** the integration tests `TRUNCATE users CASCADE` against the *same* local
+- **Papercut worth knowing:** the integration tests `TRUNCATE users CASCADE` against the _same_ local
   DB the dev server uses, so running `pnpm test` silently logs you out of your local session.
   `assertDisposableTestDb` protects production but not your dev login.
 - **Follow-up (not done):** the Spotify **logo** asset is still missing — only the text

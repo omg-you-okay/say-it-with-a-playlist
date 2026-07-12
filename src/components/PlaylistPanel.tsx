@@ -91,7 +91,7 @@ export function PlaylistPanel({
 
       <ol
         aria-label="Matched tracks"
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="scroll-slim min-h-0 flex-1 overflow-y-auto"
       >
         {rows.map((row, i) => {
           const searching = row.title === null;

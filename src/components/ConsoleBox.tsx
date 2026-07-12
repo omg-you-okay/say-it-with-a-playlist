@@ -64,7 +64,7 @@ function LogView({ log, className }: { log: LogLine[]; className?: string }) {
       // carries a live status line instead, announcing only the transitions
       // that matter. The log stays here, navigable, for anyone who wants it.
       aria-live="off"
-      className={`flex flex-col gap-2 overflow-y-auto px-4 py-3 text-xs ${className ?? ""}`}
+      className={`scroll-slim-dark flex flex-col gap-2 overflow-y-auto px-4 py-3 text-xs ${className ?? ""}`}
     >
       {/* Not virtualized and deliberately not `content-visibility: auto`: with
           estimated off-screen heights the container's scrollHeight is only
@@ -144,8 +144,11 @@ export function ConsoleBox({
 
   return (
     <section
-      className={`flex min-h-0 flex-col overflow-hidden rounded-lg bg-console ${
-        expanded ? "flex-1" : ""
+      // w-full, not just flex-1: the wrapper is a flex column, so without an
+      // explicit width this box would shrink to its content instead of filling
+      // the rail.
+      className={`flex w-full min-w-0 flex-col overflow-hidden rounded-lg bg-console ${
+        expanded ? "min-h-0 flex-1" : ""
       }`}
       aria-label="Search console"
     >

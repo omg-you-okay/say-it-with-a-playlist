@@ -138,6 +138,52 @@
     touch-action: manipulation;
   }
 
+  /* Minimal scrollbars. The platform default is a chunky light-on-light bar
+     that looks wrong on the console's black and — worse — appears only once the
+     content overflows, reflowing everything sideways at the moment the log
+     starts scrolling. `scrollbar-gutter: stable` reserves the track up front, so
+     the arrival of the first scrollbar shifts nothing. */
+  .scroll-slim,
+  .scroll-slim-dark {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
+  .scroll-slim {
+    scrollbar-color: var(--sand-8) transparent;
+  }
+  .scroll-slim-dark {
+    scrollbar-color: var(--sand-dark-6) transparent;
+  }
+
+  /* WebKit ignores scrollbar-color, so it needs the pseudo-elements too. */
+  .scroll-slim::-webkit-scrollbar,
+  .scroll-slim-dark::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-slim::-webkit-scrollbar-track,
+  .scroll-slim-dark::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-slim::-webkit-scrollbar-thumb,
+  .scroll-slim-dark::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 4px;
+  }
+  .scroll-slim::-webkit-scrollbar-thumb {
+    background-color: var(--sand-8);
+  }
+  .scroll-slim-dark::-webkit-scrollbar-thumb {
+    background-color: var(--sand-dark-6);
+  }
+  .scroll-slim::-webkit-scrollbar-thumb:hover {
+    background-color: var(--sand-11);
+  }
+  .scroll-slim-dark::-webkit-scrollbar-thumb:hover {
+    background-color: var(--sand-dark-9);
+  }
+
   /* The live search view re-flows chips and rows as the matcher backtracks —
      that motion is the whole delight moment, so it needs an honest static
      fallback rather than being merely faster. */

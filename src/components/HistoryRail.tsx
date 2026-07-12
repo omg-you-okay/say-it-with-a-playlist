@@ -82,7 +82,7 @@ export function HistoryRail({
         </p>
       ) : (
         <ul
-          className={`min-h-0 flex-col gap-2 overflow-y-auto ${open ? "flex" : "hidden lg:flex"}`}
+          className={`scroll-slim min-h-0 flex-col gap-2 overflow-y-auto ${open ? "flex" : "hidden lg:flex"}`}
         >
           {entries.map((entry) => (
             <li key={entry.id}>

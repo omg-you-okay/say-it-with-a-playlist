@@ -329,12 +329,21 @@ export function PlaylistWorkspace({
     // Mobile stacks: rail header on top, canvas under it, console docked to the
     // bottom of the viewport (see the console wrapper below) — hence the deep
     // bottom padding, which reserves the space the docked console floats over.
-    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 pb-72 lg:flex-row lg:pb-4">
+    //
+    // Desktop pins the whole workspace to the viewport. Without a *definite*
+    // height here, `flex-1` on the expanded console has no ceiling to resolve
+    // against, so instead of scrolling inside its box the log just grows the
+    // page. `lg:flex-none` matters as much as `lg:h-dvh`: this div is itself a
+    // flex child of <body>, and `flex-1` (basis 0% + grow) would otherwise win
+    // over the height on the main axis and let it grow anyway. Everything that
+    // scrolls — the log, the track list, history — does it inside its own box,
+    // so the page itself never needs to.
+    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 pb-72 lg:h-dvh lg:flex-none lg:flex-row lg:overflow-hidden lg:pb-4">
       {/* The canvas: the artifact. No status bar — black is reserved for the
           machine, and the machine lives in the rail. */}
       <main
         id="main"
-        className="order-2 flex min-h-96 flex-1 items-center justify-center rounded-lg border border-border bg-card px-6 py-10 lg:order-1"
+        className="scroll-slim order-2 flex min-h-96 flex-1 items-center justify-center rounded-lg border border-border bg-card px-6 py-10 lg:order-1 lg:min-h-0 lg:overflow-y-auto"
       >
         <div className="w-full max-w-xl">
           {phase.step === "input" ? (
@@ -434,10 +443,8 @@ export function PlaylistWorkspace({
             phone. Expanded, it takes the whole screen there — the mobile
             equivalent of taking the rail. */}
         <div
-          className={`fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background p-3 lg:static lg:z-auto lg:mt-auto lg:flex lg:border-0 lg:bg-transparent lg:p-0 ${
-            logExpanded
-              ? "top-0 flex flex-col lg:top-auto lg:min-h-0 lg:flex-1"
-              : ""
+          className={`fixed inset-x-0 bottom-0 z-20 flex flex-col border-t border-border bg-background p-3 lg:static lg:z-auto lg:mt-auto lg:border-0 lg:bg-transparent lg:p-0 ${
+            logExpanded ? "top-0 lg:top-auto lg:min-h-0 lg:flex-1" : ""
           }`}
         >
           <ConsoleBox
