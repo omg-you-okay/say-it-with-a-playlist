@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createSentenceEngine } from "../engines/SentenceEngine";
 import { createSpotifyEngine } from "../engines/SpotifyEngine";
 import { type TrackCandidate } from "../resources/SpotifyResource";
-import { makePlaylistManager } from "./PlaylistManager";
+import { makePlaylistManager, type PreviewEvent } from "./PlaylistManager";
 
 // The engines are real — these tests exercise the whole decomposition core.
 // Only the Spotify search is mocked (roadmap: Iteration 2 mocks the search):
@@ -225,6 +225,171 @@ describe("PlaylistManager.matchSentence", () => {
   });
 });
 
+describe("PlaylistManager.matchSentence progress events (ADR 0013)", () => {
+  function collect(): {
+    onProgress: (event: PreviewEvent) => void;
+    events: PreviewEvent[];
+  } {
+    const events: PreviewEvent[] = [];
+    return { onProgress: (event) => events.push(event), events };
+  }
+
+  it("emits tokenised → try → hit → done for a clean single-candidate match", async () => {
+    const { manager } = makeManager({ hello: ["Hello"] });
+    const { onProgress, events } = collect();
+
+    await manager.matchSentence("tok", "Hello!", onProgress);
+
+    expect(events).toEqual([
+      { type: "tokenised", words: 1 },
+      { type: "try", index: 0, phrase: "hello", words: 1 },
+      {
+        type: "hit",
+        index: 0,
+        phrase: "hello",
+        wordCount: 1,
+        track: track("Hello"),
+      },
+      {
+        type: "done",
+        ok: true,
+        tracks: [{ phrase: "hello", track: track("Hello") }],
+      },
+    ]);
+  });
+
+  it("emits miss + split while backtracking to a shorter grouping", async () => {
+    const { manager } = makeManager({
+      "i will": ["I Will"],
+      "always love you": ["Always Love You"],
+    });
+    const { onProgress, events } = collect();
+
+    await manager.matchSentence("tok", "I will always love you", onProgress);
+
+    const misses = events.filter((e) => e.type === "miss");
+    expect(misses.map((e) => e.phrase)).toEqual([
+      "i will always love you",
+      "i will always love",
+      "i will always",
+    ]);
+    // Each miss has a shorter grouping left to try, so each is followed by a split.
+    const splits = events.filter((e) => e.type === "split");
+    expect(splits).toHaveLength(3);
+    expect(splits[0]).toEqual({
+      type: "split",
+      index: 0,
+      phrase: "i will always love you",
+    });
+
+    const hits = events.filter((e) => e.type === "hit");
+    expect(hits).toEqual([
+      {
+        type: "hit",
+        index: 0,
+        phrase: "i will",
+        wordCount: 2,
+        track: track("I Will"),
+      },
+      {
+        type: "hit",
+        index: 2,
+        phrase: "always love you",
+        wordCount: 3,
+        track: track("Always Love You"),
+      },
+    ]);
+  });
+
+  it("emits a split when a hit is undone by a downstream dead end", async () => {
+    // Same fixture as the "backtracks out of a matched grouping" test above:
+    // "red blue" hits but strands "green", so the loop must undo that hit.
+    const { manager } = makeManager({
+      "red blue": ["Red Blue"],
+      red: ["Red"],
+      "blue green": ["Blue Green"],
+    });
+    const { onProgress, events } = collect();
+
+    await manager.matchSentence("tok", "red blue green", onProgress);
+
+    const hitPhrases = events
+      .filter((e) => e.type === "hit")
+      .map((e) => e.phrase);
+    // "red blue" is hit, then undone (its remainder — "green" alone — dead-ends).
+    expect(hitPhrases).toEqual(["red blue", "red", "blue green"]);
+
+    const splits = events.filter((e) => e.type === "split");
+    expect(splits).toContainEqual({
+      type: "split",
+      index: 0,
+      phrase: "red blue",
+    });
+  });
+
+  it("emits a terminal done:false with the unmatched phrases", async () => {
+    const { manager } = makeManager({});
+    const { onProgress, events } = collect();
+
+    await manager.matchSentence("tok", "xyzzy", onProgress);
+
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      ok: false,
+      unmatched: ["xyzzy"],
+    });
+  });
+
+  it("emits no split for an undone hit that was the last candidate at its position", async () => {
+    // The case the client's prune rule has to survive. At index 1 the
+    // candidates are ["blue green", "blue"]. "blue green" misses (emitting a
+    // split), then "blue" — the LAST candidate — hits, and its remainder
+    // ("green") dead-ends. With no shorter grouping left to break into, NO
+    // split is emitted for "blue": the loop just gives up on index 1. So the
+    // only split at index 1 fires *before* the hit it would need to undo. A
+    // client pruning on `split` alone would strand "blue"'s track on screen;
+    // pruning on the next `try` is what actually clears it — see the
+    // prune-on-try rule in PlaylistGenerator.
+    const { manager } = makeManager({
+      red: ["Red"],
+      blue: ["Blue"],
+      "red blue": ["Red Blue"],
+    });
+    const { onProgress, events } = collect();
+
+    const result = await manager.matchSentence(
+      "tok",
+      "red blue green",
+      onProgress,
+    );
+
+    expect(result.ok).toBe(false);
+    // "blue" hit at index 1, and its remainder then dead-ended...
+    expect(events).toContainEqual({
+      type: "hit",
+      index: 1,
+      phrase: "blue",
+      wordCount: 1,
+      track: track("Blue"),
+    });
+    // ...yet no split ever names "blue", so nothing tells a split-pruning
+    // client to drop it.
+    const splitPhrases = events
+      .filter((e) => e.type === "split")
+      .map((e) => e.phrase);
+    expect(splitPhrases).not.toContain("blue");
+  });
+
+  it("stays silent when no callback is given (existing callers unaffected)", async () => {
+    const { manager } = makeManager({ hello: ["Hello"] });
+
+    // No third argument — must not throw, must behave exactly as before.
+    const result = await manager.matchSentence("tok", "hello");
+
+    expect(result.ok).toBe(true);
+  });
+});
+
 describe("PlaylistManager.previewSentence", () => {
   function makePreviewDeps(catalog: Record<string, string[]>) {
     const searchTracks = vi.fn(async (_token: string, query: string) =>
@@ -283,6 +448,22 @@ describe("PlaylistManager.previewSentence", () => {
       deps.manager.previewSentence("user-1", "hello"),
     ).rejects.toThrow("no tokens");
     expect(deps.searchTracks).not.toHaveBeenCalled();
+  });
+
+  it("forwards onProgress through to the underlying match (ADR 0013)", async () => {
+    const deps = makePreviewDeps({ hello: ["Hello"] });
+    const events: PreviewEvent[] = [];
+
+    await deps.manager.previewSentence("user-1", "hello", (event) =>
+      events.push(event),
+    );
+
+    expect(events.map((e) => e.type)).toEqual([
+      "tokenised",
+      "try",
+      "hit",
+      "done",
+    ]);
   });
 });
 

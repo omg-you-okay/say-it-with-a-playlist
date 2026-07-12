@@ -99,26 +99,45 @@ function previewRequest(sessionToken: string | undefined, sentence: unknown) {
   });
 }
 
+// The route streams NDJSON (ADR 0013) — read the whole body and split it back
+// into the events the Manager emitted, in order.
+async function readEvents(
+  response: Response,
+): Promise<Record<string, unknown>[]> {
+  const text = await response.text();
+  return text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line));
+}
+
 describe("POST /api/playlists/preview", () => {
-  it("returns the matched tracks without creating anything", async () => {
+  it("streams progress and a terminal done event with the matched tracks, creating nothing", async () => {
     stubSpotify({ hello: ["Hello"] });
     const { user, sessionToken } = await seedLoggedInUser();
 
     const response = await preview(previewRequest(sessionToken, "Hello!"));
 
     expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.tracks).toEqual([
-      {
-        phrase: "hello",
-        track: {
-          id: "id-hello-0",
-          uri: "spotify:track:id-hello-0",
-          name: "Hello",
-          artistNames: ["Artist"],
+    expect(response.headers.get("Content-Type")).toBe("application/x-ndjson");
+    const events = await readEvents(response);
+
+    expect(events[0]).toEqual({ type: "tokenised", words: 1 });
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      ok: true,
+      tracks: [
+        {
+          phrase: "hello",
+          track: {
+            id: "id-hello-0",
+            uri: "spotify:track:id-hello-0",
+            name: "Hello",
+            artistNames: ["Artist"],
+          },
         },
-      },
-    ]);
+      ],
+    });
 
     const { rows } = await getPool().query(
       "SELECT 1 FROM playlists WHERE user_id = $1",
@@ -133,15 +152,21 @@ describe("POST /api/playlists/preview", () => {
     expect(response.status).toBe(401);
   });
 
-  it("returns 422 with the unmatched phrases on a no-match sentence", async () => {
+  it("streams a terminal done:false with the unmatched phrases on a no-match sentence", async () => {
     stubSpotify({});
     const { sessionToken } = await seedLoggedInUser();
 
     const response = await preview(previewRequest(sessionToken, "xyzzy"));
 
-    expect(response.status).toBe(422);
-    const body = await response.json();
-    expect(body.unmatched).toEqual(["xyzzy"]);
+    // ADR 0013: no full cover is a terminal event, not a status code — the
+    // 200 and headers are already on the wire by the time the matcher knows.
+    expect(response.status).toBe(200);
+    const events = await readEvents(response);
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      ok: false,
+      unmatched: ["xyzzy"],
+    });
   });
 
   it("returns 400 for a blank sentence", async () => {

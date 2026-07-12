@@ -55,13 +55,41 @@ export type PreviewResult = SentenceMatchResult;
 
 export type CreatePlaylistResult = { ok: true; url: string };
 
+// PreviewEvent — the backtracking loop's progress, live (ADR 0013). The
+// Manager emits these through an optional callback as it works; the preview
+// route adapts them into an NDJSON stream. `index` is the word position each
+// event concerns, so a client can place/un-place chips positionally even as
+// the loop backtracks — an event's `index`/`phrase` describe the candidate
+// grouping the loop is currently trying at that position, not necessarily
+// part of the eventual answer.
+export type PreviewEvent =
+  | { type: "tokenised"; words: number }
+  | { type: "try"; index: number; phrase: string; words: number }
+  | {
+      type: "hit";
+      index: number;
+      phrase: string;
+      wordCount: number;
+      track: TrackCandidate;
+    }
+  | { type: "miss"; index: number; phrase: string }
+  | { type: "split"; index: number; phrase: string }
+  | ({ type: "done" } & SentenceMatchResult);
+
+export type OnProgress = (event: PreviewEvent) => void;
+
 export interface PlaylistManager {
   matchSentence(
     accessToken: string,
     sentence: string,
+    onProgress?: OnProgress,
   ): Promise<SentenceMatchResult>;
   /** Decompose + match only — creates nothing (Iteration 4 preview step). */
-  previewSentence(userId: string, sentence: string): Promise<PreviewResult>;
+  previewSentence(
+    userId: string,
+    sentence: string,
+    onProgress?: OnProgress,
+  ): Promise<PreviewResult>;
   /**
    * Build the playlist from client-confirmed tracks (the ones just
    * previewed) at the chosen visibility, add them in sentence order, and
@@ -108,9 +136,15 @@ export function makePlaylistManager(
   async function matchSentence(
     accessToken: string,
     sentence: string,
+    onProgress?: OnProgress,
   ): Promise<SentenceMatchResult> {
     const words = sentenceEngine.tokenize(sentence);
-    if (words.length === 0) return { ok: false, unmatched: [] };
+    onProgress?.({ type: "tokenised", words: words.length });
+    if (words.length === 0) {
+      const result: SentenceMatchResult = { ok: false, unmatched: [] };
+      onProgress?.({ type: "done", ...result });
+      return result;
+    }
 
     // Backtracking re-derives groupings for the remainder, so the same
     // variant can come up on several paths — search each one only once.
@@ -161,7 +195,17 @@ export function makePlaylistManager(
       if (index === words.length) return [];
       if (deadEnds.has(index)) return null;
 
-      for (const candidate of sentenceEngine.candidatesAt(words, index)) {
+      const candidates = sentenceEngine.candidatesAt(words, index);
+      for (let i = 0; i < candidates.length; i++) {
+        const candidate = candidates[i];
+        const hasShorterCandidate = i < candidates.length - 1;
+        onProgress?.({
+          type: "try",
+          index,
+          phrase: candidate.phrase,
+          words: candidate.wordCount,
+        });
+
         let match: TrackCandidate | null = null;
         for (const variant of candidate.variants) {
           match = await findTrack(variant);
@@ -169,19 +213,36 @@ export function makePlaylistManager(
         }
         if (!match) {
           recordFailure(index, candidate.phrase);
+          onProgress?.({ type: "miss", index, phrase: candidate.phrase });
+          if (hasShorterCandidate) {
+            onProgress?.({ type: "split", index, phrase: candidate.phrase });
+          }
           continue;
         }
+
+        onProgress?.({
+          type: "hit",
+          index,
+          phrase: candidate.phrase,
+          wordCount: candidate.wordCount,
+          track: match,
+        });
         const rest = await cover(index + candidate.wordCount);
         if (rest) return [{ phrase: candidate.phrase, track: match }, ...rest];
+        if (hasShorterCandidate) {
+          onProgress?.({ type: "split", index, phrase: candidate.phrase });
+        }
       }
       deadEnds.add(index);
       return null;
     }
 
     const tracks = await cover(0);
-    return tracks
+    const result: SentenceMatchResult = tracks
       ? { ok: true, tracks }
       : { ok: false, unmatched: deepestFailPhrases };
+    onProgress?.({ type: "done", ...result });
+    return result;
   }
 
   function requireCrossSubsystemDeps(): {
@@ -206,10 +267,10 @@ export function makePlaylistManager(
   return {
     matchSentence,
 
-    async previewSentence(userId, sentence) {
+    async previewSentence(userId, sentence, onProgress) {
       const { userManagerResource } = requireCrossSubsystemDeps();
       const accessToken = await userManagerResource.getFreshAccessToken(userId);
-      return matchSentence(accessToken, sentence);
+      return matchSentence(accessToken, sentence, onProgress);
     },
 
     async createFromTracks(userId, sentence, tracks, isPublic) {
