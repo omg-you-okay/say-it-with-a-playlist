@@ -2,10 +2,13 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* A single light theme. The shadcn primitives ship `dark:` utilities; keeping
-   the class-based variant (rather than Tailwind's default prefers-color-scheme
-   one) leaves them inert, because nothing ever sets `.dark`. The console's dark
-   surface is its own token set below — a surface, not a second theme. */
+/* A single light theme, deliberately. No `dark:` utility is used anywhere any
+   more (the shadcn primitives that shipped them were removed — ADR 0014), but
+   the variant stays *redefined*: left at Tailwind's default it means
+   `prefers-color-scheme: dark`, so the next stray `dark:` someone adds would
+   silently fire on any visitor whose OS is dark and half-theme the page against
+   tokens that only exist in light. Bound to `.dark` — which nothing sets — it
+   can't. The console's black is its own token set below: a surface, not a theme. */
 @custom-variant dark (&:is(.dark *));
 
 /* Radix Colors — Sand / Grass / Red / Amber (radix-ui.com/colors).

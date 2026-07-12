@@ -51,31 +51,37 @@ export default async function Home({
     return <LoggedOut authError={authError} />;
   }
 
-  let history: HistoryEntry[] = [];
-  let historyError = false;
-  try {
-    const entries = await createPlaylistManager().getHistory(userId);
-    history = entries.map((entry) => ({
-      id: entry.id,
-      sentence: entry.sentence,
-      url: entry.url,
-      trackCount: entry.tracks.length,
-      dateLabel: DATE_FORMATTER.format(entry.createdAt),
-    }));
-  } catch (error) {
-    console.error("Failed to load playlist history", error);
-    historyError = true;
+  // Two independent reads, both hitting only Postgres — no reason to await them
+  // one after the other. Neither is worth failing the page over: history
+  // degrades to a soft message, and a missing profile falls back to a generic
+  // name in the rail.
+  const [historyResult, profileResult] = await Promise.allSettled([
+    createPlaylistManager().getHistory(userId),
+    createUserManager().getProfile(userId),
+  ]);
+
+  if (historyResult.status === "rejected") {
+    console.error("Failed to load playlist history", historyResult.reason);
+  }
+  if (profileResult.status === "rejected") {
+    console.error("Failed to load the user profile", profileResult.reason);
   }
 
-  // A missing profile is not worth failing the page over — the rail just falls
-  // back to a generic name.
-  let displayName: string | null = null;
-  try {
-    const profile = await createUserManager().getProfile(userId);
-    displayName = profile?.displayName ?? null;
-  } catch (error) {
-    console.error("Failed to load the user profile", error);
-  }
+  const historyError = historyResult.status === "rejected";
+  const history: HistoryEntry[] =
+    historyResult.status === "fulfilled"
+      ? historyResult.value.map((entry) => ({
+          id: entry.id,
+          sentence: entry.sentence,
+          url: entry.url,
+          trackCount: entry.tracks.length,
+          dateLabel: DATE_FORMATTER.format(entry.createdAt),
+        }))
+      : [];
+  const displayName =
+    profileResult.status === "fulfilled"
+      ? (profileResult.value?.displayName ?? null)
+      : null;
 
   return (
     <PlaylistWorkspace

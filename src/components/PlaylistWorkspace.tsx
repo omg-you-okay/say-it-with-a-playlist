@@ -218,6 +218,10 @@ export function PlaylistWorkspace({
       }
 
       case "error":
+        // Clear `trying` for the same reason `done` does: the strip renders in
+        // every non-input phase, so leaving the last attempt set would strand an
+        // inverted "currently searching" chip on screen after the search died.
+        liveRef.current = { ...liveRef.current, trying: null };
         publishNow();
         setPhase({
           step: "error",
@@ -283,7 +287,9 @@ export function PlaylistWorkspace({
         body: JSON.stringify({ sentence, tracks, public: isPublic }),
       });
       const body = await res.json();
-      if (res.status === 200) {
+      // A 200 with no url would otherwise render a PLAY ON SPOTIFY link with
+      // href="undefined" — a dead button that looks like a working one.
+      if (res.status === 200 && typeof body?.url === "string") {
         setPhase({ step: "created", tracks, url: body.url });
         // The page is a Server Component that reads history at render time —
         // refresh so the new playlist appears without a reload.

@@ -58,6 +58,7 @@ export function HistoryRail({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
+        aria-controls="history-list"
         className="flex shrink-0 items-baseline justify-between gap-2 rounded px-1 text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none lg:hidden"
       >
         <span className={HEADING}>History</span>
@@ -76,12 +77,14 @@ export function HistoryRail({
 
       {entries.length === 0 ? (
         <p
+          id="history-list"
           className={`px-1 text-xs text-muted-foreground ${open ? "" : "hidden lg:block"}`}
         >
           Nothing yet. Spell something out and it&apos;ll show up here.
         </p>
       ) : (
         <ul
+          id="history-list"
           className={`scroll-slim min-h-0 flex-col gap-2 overflow-y-auto ${open ? "flex" : "hidden lg:flex"}`}
         >
           {entries.map((entry) => (

@@ -7,8 +7,10 @@
 > `main` (GitHub Flow, ADR 0007).
 
 **Stack (ADR 0001):** Next.js full-stack (App Router) · Supabase = managed Postgres in
-prod only · shadcn/ui · TypeScript · Vitest. Data access via the `pg` driver, added the
-iteration it is first needed (ADR 0005). Local DB = single `postgres:17-alpine` container.
+prod only · Tailwind · TypeScript · Vitest (+ jsdom/Testing Library for component tests,
+Iteration 6). Data access via the `pg` driver, added the iteration it is first needed
+(ADR 0005). Local DB = single `postgres:17-alpine` container. **UI components are bespoke
+Tailwind; shadcn is retained as a generator, not the component layer (ADR 0014, amends 0001).**
 
 **iDesign layering (CLAUDE.md §4):** Managers → (Engines, Resources). Engines never call
 Engines. No layer skipping. Crossing a subsystem boundary goes through a **manager-resource**
@@ -213,7 +215,7 @@ added to `.mcp.json`. 6 new tests → suite 150 (4 real-Postgres `PlaylistResour
 
 ---
 
-## Iteration 6 — UX overhaul 🚧 IN PROGRESS (Setup ✅ · Design ✅ · Implement next)
+## Iteration 6 — UX overhaul ✅ DONE (Setup ✅ PR #22 · Design ✅ PR #23 · Implement ✅ Chunk 1 PR #24, Chunk 2 PR #25)
 
 Reframes the old "Advanced" iteration (scope note kept at the foot of this section) as a
 UX-driven push (owner request, 2026-07-11, kicked off after Iteration 5 merged): make the app
@@ -386,21 +388,20 @@ no-trailing-newline cases.
   NDJSON reader now `cancel()`s the body rather than only releasing the lock. (4) The log
   auto-scroll sticks to the bottom instead of forcing it, so a user who scrolls up to read isn't
   yanked back by the next event.
-- **Follow-up → Chunk 2:** full Playwright-MCP screenshot verification against the v3 frames
-  needs a working browser channel (now unblocked for next session) — nothing to compare against
-  yet anyway until the visual design lands.
-- **Follow-up → Chunk 2 (deferred from review, both land naturally in the redesign):**
-  (a) **Live view re-renders once per event** and copies the whole log array each time
-  (`setPhase(prev => ({...prev, log: [...prev.log, line]}))`) — O(n²) in event count, and a long
-  sentence at the `maxSearches: 100` budget emits several hundred events. Batch into a ref +
-  flush on an animation frame, and/or cap the retained log length (the design's fixed-height log
-  box wants a cap anyway). (b) **The NDJSON wire contract is declared in three places** —
+- **Follow-up → Chunk 2: ✅ closed.** The live view's O(n²) log re-render (a whole-array copy per
+  event, hundreds of events at the `maxSearches` budget) is fixed in Chunk 2: events batch into a
+  ref and flush on one animation frame, and the retained log is capped at 200 lines.
+- **Follow-up → Chunk 2: ⚠️ still open — the NDJSON wire contract is declared in three places:**
   `PreviewEvent` in `PlaylistManager.ts` (no `error` variant), `StreamEvent` in the route
   (`PreviewEvent | error`), and the UI-local `PreviewEvent` in `src/lib/preview-stream.ts`. The
   duplication is deliberate (ADR 0008 pattern; keeps the `ui`→`manager` lint boundary intact) but
-  nothing links them, so a shape change type-checks cleanly on both sides while breaking at
-  runtime. The preview route's integration test asserting exact event shapes is currently the only
-  guard — add a contract test if the shape changes again.
+  nothing links them, so a shape change type-checks cleanly on both sides while breaking at runtime.
+  **Chunk 2 widened the shape twice more (`searches`, `tokens`), so this risk is now larger, not
+  smaller.** The preview route's integration test asserting exact event shapes is still the only
+  guard. Add a contract test.
+- **Follow-up → Chunk 2: partially closed.** Screenshot verification against the v3 frames did
+  happen, but **not through Playwright MCP** — see Chunk 2's note; MCP is still pinned to the wrong
+  browser channel and verification went through the Playwright library directly.
 
 #### Chunk 2 — visual overhaul ✅ DONE (branch `feature/visual-overhaul`)
 
@@ -435,12 +436,12 @@ restyled in place. New `SentenceStrip` / `PlaylistPanel` / `ConsoleBox` / `Histo
 - **`UserResource.findById` + `UserManager.getProfile`** — the rail names the signed-in user, and
   `users.display_name` was written at login but never read back. `getProfile` returns a narrower
   shape than the resource's `AppUser` (no email, no Spotify id).
-- **All four shadcn primitives (`button`/`input`/`label`/`switch`) were deleted as dead code.** The
-  v3 controls are bespoke — a pill CTA, a segmented Private/Public toggle (not a `Switch`), text-only
-  console buttons, a native `<textarea>` — and nothing imported them any more. The `shadcn` dep and
-  `components.json` stay wired so the CLI still works. This is a step away from ADR 0001's letter
-  (it names shadcn/ui as the component layer) but not its intent (Tailwind + copied-in components we
-  own); flagged rather than silently done.
+- **All four shadcn primitives (`button`/`input`/`label`/`switch`) were deleted as dead code** —
+  the v3 controls are bespoke (pill CTA, segmented Private/Public toggle, text-only console buttons,
+  native `<textarea>`) and nothing imported them any more. `shadcn` + `components.json` stay wired as
+  a **generator**. Locked in **[ADR 0014](decisions/0014-bespoke-ui-components.md)**, which amends
+  ADR 0001 — reach for `shadcn add` for any genuinely primitive overlay (dialog/menu/popover), where
+  hand-rolling accessibility would stop paying.
 - **Component tests exist now** (`jsdom` + Testing Library, opted into per-file with a
   `// @vitest-environment jsdom` docblock; vitest stays `node` by default). They cover the thing the
   eye cannot check: a scripted event stream that **backtracks**, asserting the strip and the track
@@ -461,6 +462,24 @@ restyled in place. New `SentenceStrip` / `PlaylistPanel` / `ConsoleBox` / `Histo
      the console **docked to the viewport bottom** (one console, repositioned at the breakpoint —
      not rendered twice), history behind a disclosure, and the expanded log taking the whole screen
      (the phone equivalent of taking the rail).
+- **Five more layout bugs, all found by the owner looking at the running app, none catchable by the
+  suite** (this is the pattern of the whole chunk — see the `sr-only` note below):
+  1. **The expanded log grew the page instead of scrolling inside its box.** `lg:h-dvh` alone did
+     nothing: the workspace root is a flex child of `<body>`, and `flex-1` (basis `0%` + grow)
+     **beats `height` on the main axis**. It needs `lg:flex-none` beside it to make the height
+     definite — only then does `flex-1` on the console have a ceiling to resolve against.
+  2. **The console stopped filling the rail.** The mobile refactor gave its wrapper `lg:flex`, which
+     turned the box into a flex _item_ that shrinks to content width. Fixed with an explicit
+     `w-full`.
+  3. **The sentence strip was built from nested flex wrappers**, so the `/` dividers could not flow
+     with the words and the untried tail was stranded on its own line under a dangling slash. It is
+     plain **inline** text now and wraps like a sentence.
+  4. **Scrollbars.** The platform default is chunky, wrong on black, and — worse — appears only once
+     content overflows, reflowing the log sideways the moment it starts streaming. Added
+     `.scroll-slim` / `.scroll-slim-dark`.
+  5. **…and then `scrollbar-gutter: stable` (from fix 4) put a white strip down the track list**,
+     because a reserved track is a strip the row backgrounds don't reach. The gutter is only worth
+     its cost on the **log**, which streams; the track list keeps the slim bar without it.
 - **Gotcha worth not re-introducing — `sr-only` needs a positioned ancestor.** Tailwind's `sr-only`
   is `position: absolute`; with no positioned ancestor it anchors to the **initial containing block**
   (the document), not to the box it appears to live in. The per-line `<span class="sr-only">` in the
@@ -484,6 +503,26 @@ restyled in place. New `SentenceStrip` / `PlaylistPanel` / `ConsoleBox` / `Histo
 - **Papercut worth knowing:** the integration tests `TRUNCATE users CASCADE` against the _same_ local
   DB the dev server uses, so running `pnpm test` silently logs you out of your local session.
   `assertDisposableTestDb` protects production but not your dev login.
+- **Code review (folded in, same branch):** (1) the `error` event never cleared `trying`, stranding
+  an inverted "currently searching" chip on the strip after a failed search — `done` cleared it,
+  `error` didn't. (2) **The terminal status was announced to nobody:** both `aria-live` regions were
+  _conditionally mounted_ on `busy`, so the final one was inserted into the DOM already holding its
+  text — and a live region announces _changes_ to content it already has, not its initial content.
+  One persistent region now spans every phase. (3) `page.tsx` awaited history and profile
+  sequentially; now one `Promise.allSettled` (both are Postgres-only reads). (4) A `200` with no
+  `url` would have rendered a `PLAY ON SPOTIFY` link with `href="undefined"` — a dead button that
+  looks live. (5) `aria-controls` on the mobile history disclosure.
+- **Review follow-up → the strip and the panel read from different sources in terminal states:**
+  the sentence strip renders `live.placed` (accumulated from `hit` events) while the panel renders
+  `phase.tracks` (the authoritative terminal `done` payload). They agree today because the prune
+  rule keeps `placed` equal to the winning path — but they are two sources of truth for one answer,
+  and only the panel's is authoritative. Deriving the strip from `phase.tracks` once the search
+  settles would remove the class of bug entirely.
+- **Review follow-up → `page.tsx` still over-provisions its managers** (the Iteration 5 follow-up,
+  now doubled): `createPlaylistManager()` _and_ `createUserManager()` each transitively build an
+  `AuthEngine` and eagerly require the three `SPOTIFY_*` env vars, for two reads that only touch
+  Postgres. Harmless while those vars are always set, but it couples DB reads to Spotify config. The
+  `requirePlaylistResource` guard already anticipates a cross-subsystem-free manager.
 - **Follow-up (not done):** the Spotify **logo** asset is still missing — only the text
   "Content from Spotify" is rendered. Their guidelines require the mark on Spotify-derived content
   and forbid recreating it, so the official asset must be dropped in before any public deploy.
@@ -510,3 +549,29 @@ Manual song replacement and album art — pulled into this iteration on 2026-07-
 results per search and `SpotifyEngine.findMatch` throws all but the first away (`tracks.find`),
 so alternatives cost **zero** extra Spotify calls and need no new endpoint — and since every
 alternative is title-equal under ADR 0003, a swap can never break the sentence.
+
+---
+
+## What's next — the MVP phase plan (CLAUDE.md §9) is complete
+
+Iterations 0–6 are done: the app does the whole job, in the agreed design, live against real
+Spotify. There is **no Iteration 7 planned** — the next session should pick from the debt below
+rather than assume a queue exists. Roughly in the order the project would feel them:
+
+1. **Ship it (nothing is deployed).** Still owed since Iteration 1: hosted Supabase, a deploy
+   target, and a **secrets strategy** (local `.env` / CI secrets / prod env) — the last is a
+   decision that was explicitly deferred and never made. **Blocker before any public deploy:** the
+   Spotify **logo asset** (Iteration 6 — their guidelines require the mark on Spotify-derived
+   content and forbid recreating it; only the text attribution is rendered today).
+2. **CI e2e.** Deferred since Iteration 5 and now well-earned: Iteration 6 shipped **five** layout
+   bugs that typecheck, lint and 170 unit/component tests could not see, because jsdom has no layout
+   engine. All were caught by measuring a real browser. Chunk 2 also proved the harness is cheap —
+   intercept `POST /api/playlists/preview` and serve a synthetic NDJSON stream, and the whole live
+   view is drivable with **no Spotify and no OAuth**, which was the original blocker.
+3. **The NDJSON contract test** (Iteration 6 Chunk 1 follow-up, now higher risk — the shape was
+   widened twice more in Chunk 2).
+4. **Correctness debt, in rough severity order:** the concurrent-refresh race in
+   `UserManager.getFreshAccessToken` (owed since Iteration 2); `invalid_grant` re-auth UX (Iteration
+   3); the orphaned-playlist-on-partial-failure and >100-track cases (Iteration 3 review).
+5. **Playwright MCP** is still pinned to the wrong browser channel — check a fresh connection before
+   trusting it (Iteration 6 Chunk 2).

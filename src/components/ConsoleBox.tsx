@@ -59,10 +59,11 @@ function LogView({ log, className }: { log: LogLine[]; className?: string }) {
       ref={listRef}
       onScroll={handleScroll}
       role="log"
-      // Deliberately off: a long sentence emits hundreds of events, and a
-      // polite live region would read every `try` and `miss` aloud. The footer
-      // carries a live status line instead, announcing only the transitions
-      // that matter. The log stays here, navigable, for anyone who wants it.
+      // Deliberately off: a long sentence emits hundreds of events, and a polite
+      // live region would read every `try` and `miss` aloud. The persistent
+      // status region at the foot of this component announces the phase
+      // transitions instead. The log stays here, navigable, for anyone who
+      // wants to read it.
       aria-live="off"
       className={`scroll-slim-dark flex flex-col gap-2 overflow-y-auto px-4 py-3 text-xs ${className ?? ""}`}
     >
@@ -223,9 +224,7 @@ export function ConsoleBox({
 
           <div className="mt-auto flex shrink-0 items-center justify-between border-t border-console-border px-4 py-2.5 text-xs">
             {busy ? (
-              <span aria-live="polite" className="text-console-dim">
-                {status}
-              </span>
+              <span className="text-console-dim">{status}</span>
             ) : (
               <button
                 type="button"
@@ -251,15 +250,19 @@ export function ConsoleBox({
               {expanded ? "hide log" : "show log"}
             </button>
           </div>
-
-          {/* The only thing announced: phase transitions, not every event. */}
-          {!busy && (
-            <p aria-live="polite" className="sr-only">
-              {status}
-            </p>
-          )}
         </>
       )}
+
+      {/* The one thing announced: phase transitions, never the event firehose
+          (the log itself is aria-live="off" for exactly that reason).
+          Rendered unconditionally — a live region only announces *changes* to
+          content it already holds, so a region mounted at the moment the status
+          becomes final is inserted already-populated and stays silent. Keeping
+          one region alive across every phase is what makes "Found 3 tracks"
+          actually reach a screen reader. */}
+      <p aria-live="polite" className="sr-only">
+        {status}
+      </p>
     </section>
   );
 }
