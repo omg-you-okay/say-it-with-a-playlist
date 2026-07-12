@@ -6,7 +6,7 @@
     },
     "playwright": {
       "command": "pnpm",
-      "args": ["dlx", "@playwright/mcp@latest"]
+      "args": ["dlx", "@playwright/mcp@latest", "--browser", "chromium"]
     }
   }
 }
