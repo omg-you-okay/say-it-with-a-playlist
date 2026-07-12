@@ -332,45 +332,102 @@ where they are easier to get right anyway. Do **not** treat them as open design 
 - **Mobile frames are stale v1.** Redo them on the v3 concept during Implement. The rail must
   collapse: history behind a disclosure, and the black box (input/logger) docks to the bottom.
 
-### C. Implement — next (one session per chunk)
+### C. Implement (one session per chunk)
 
 shadcn/ui + Tailwind (ADR 0001). Tests alongside (CLAUDE.md §7).
 
-**The long pole is streaming preview — now locked in [ADR 0013](decisions/0013-streaming-preview-progress.md)
-(read it before writing code; it amends ADR 0012).** In short: `PlaylistManager` emits progress
-through an **optional injected `onProgress` callback** (the Manager already owns the orchestration
-loop, so that is where "what am I doing right now" belongs — CLAUDE.md §4); the **route** adapts
-that callback into a streamed **NDJSON** response. Engines stay pure and untouched,
-`SpotifyResource` untouched, no layer skipping. The callback being optional means every existing
-caller and test keeps working, and the loop is testable by collecting events into an array — no
-HTTP needed.
+#### Chunk 1 — streaming spine ✅ DONE (branch `feature/streaming-preview`, not yet merged)
 
-Two contract changes fall out, both recorded in ADR 0013: the terminal `done` event carries the
-full track list (so ADR 0012's "create trusts the client-confirmed tracks" still holds), and
-**`422` (no full cover) becomes a terminal event rather than a status code** — by the time the
-matcher knows, the `200` and its headers are already on the wire.
+The long pole, per [ADR 0013](decisions/0013-streaming-preview-progress.md) (amends ADR 0012):
+`PlaylistManager.matchSentence`/`previewSentence` gained an **optional injected `onProgress`
+callback** emitting `PreviewEvent`s (`tokenised`/`try`/`hit`/`miss`/`split`/`done`) from inside the
+existing `cover()` loop — no restructuring, `SentenceEngine`/`SpotifyEngine`/`SpotifyResource`
+untouched. `POST /api/playlists/preview` adapts that callback into a streamed NDJSON body
+(`Content-Type: application/x-ndjson`); **`422` (no full cover) is now a terminal `done:false`
+event**, not a status code, since by the time the matcher knows, the `200` and headers are already
+on the wire. A new `src/lib/preview-stream.ts` (the UI-local ADR 0008-style mirror) reads the
+NDJSON body — line-buffered, so a JSON object split across two chunks still parses whole.
+`PlaylistGenerator.tsx` gained a `searching` phase: the current phrase being tried, a positional
+list of resolved tracks (placed on `hit`, pruned from an index on `split` — a `split` fires
+whenever the loop abandons a candidate, whether from a miss or from a hit whose remainder
+dead-ended, so pruning there keeps the live list honest about backtracking), and a scrolling log —
+the create step and its `router.refresh()` are untouched. Rendering deliberately stayed in the
+current shadcn look; Chunk 2 restyles it. 161 tests (was 150): new `PlaylistManager` progress-event
+units collect emitted events into an array (no HTTP, per ADR 0013's testing note), the preview
+route integration test now parses NDJSON, and `preview-stream.test.ts` covers the chunk-split and
+no-trailing-newline cases.
 
+- **Event shape grew two fields beyond ADR 0013's original spec, both additive:** `index` (the
+  word position) on `try`/`hit`/`miss`/`split`, and `wordCount` on `hit`. Without a position, a
+  client can't tell that a `hit` got backtracked out of the answer when its remainder later
+  dead-ends — the live list would drift from what the terminal `done` actually reports. Not
+  ADR-worthy as a new decision (it's an additive field on an already-locked shape), but recorded
+  here since the ADR's own event examples predate it.
+- **Live-verified against a real Spotify account, not Playwright MCP.** This dev machine had no
+  Chrome install for Playwright MCP's default `chrome` channel; installed Playwright's own
+  bundled Chromium instead and pointed `.mcp.json` at `--browser chromium` so a fresh MCP
+  connection picks it up (this session's already-open connection couldn't reload mid-session to
+  use it). The user manually drove the browser instead: a clean single-word sentence
+  (preview → create → history) and a long, awkward sentence that genuinely forced
+  miss → split → retry backtracking — confirmed both by eye and by the dev server's request log
+  (14–32s of real Spotify fan-out per preview call, the exact dead time streaming fills). That
+  smoke test also caught a real bug fixed same-session: the log `<ol>` wasn't auto-scrolling, so
+  it stayed pinned to its oldest lines while the "currently trying" header raced ahead — fixed
+  with a scroll-to-bottom effect keyed on the log.
+- **Code review found and fixed (same branch):** (1) a client disconnecting mid-search made
+  `controller.enqueue` throw on the cancelled stream, and the throw then cascaded through the
+  `catch` (which tried to `send` an error event) and the `finally` (`close()`), turning an
+  ordinary "user hit refresh" into an unhandled rejection — the route now tracks an `open` flag
+  set by the stream's `cancel()` and drops events once the client is gone. (2) **The client now
+  prunes resolved tracks on `try`, not on `split`:** the loop emits no `split` when the abandoned
+  candidate was the _last_ (1-word) one at a position, so a hit that got backtracked out could be
+  stranded on screen with nothing to clear it (locked in by a regression test —
+  `"emits no split for an undone hit that was the last candidate at its position"`). (3) The
+  NDJSON reader now `cancel()`s the body rather than only releasing the lock. (4) The log
+  auto-scroll sticks to the bottom instead of forcing it, so a user who scrolls up to read isn't
+  yanked back by the next event.
+- **Follow-up → Chunk 2:** full Playwright-MCP screenshot verification against the v3 frames
+  needs a working browser channel (now unblocked for next session) — nothing to compare against
+  yet anyway until the visual design lands.
+- **Follow-up → Chunk 2 (deferred from review, both land naturally in the redesign):**
+  (a) **Live view re-renders once per event** and copies the whole log array each time
+  (`setPhase(prev => ({...prev, log: [...prev.log, line]}))`) — O(n²) in event count, and a long
+  sentence at the `maxSearches: 100` budget emits several hundred events. Batch into a ref +
+  flush on an animation frame, and/or cap the retained log length (the design's fixed-height log
+  box wants a cap anyway). (b) **The NDJSON wire contract is declared in three places** —
+  `PreviewEvent` in `PlaylistManager.ts` (no `error` variant), `StreamEvent` in the route
+  (`PreviewEvent | error`), and the UI-local `PreviewEvent` in `src/lib/preview-stream.ts`. The
+  duplication is deliberate (ADR 0008 pattern; keeps the `ui`→`manager` lint boundary intact) but
+  nothing links them, so a shape change type-checks cleanly on both sides while breaking at
+  runtime. The preview route's integration test asserting exact event shapes is currently the only
+  guard — add a contract test if the shape changes again.
+
+#### Chunk 2 — visual overhaul — next
+
+- **Frontend surfaces:** `src/app/page.tsx`, `src/components/PlaylistGenerator.tsx` (restyle the
+  Chunk 1 state machine, not rebuild it), `src/components/PlaylistHistory.tsx`,
+  `src/app/globals.css`, `src/components/ui/*`. `globals.css` is still **stock shadcn** (every
+  colour zero-chroma) with a hardcoded `text-red-700` blackletter title in `page.tsx` — the Radix
+  Sand/Grass/Red token layer + IBM Plex Mono replace both. Black-box logger / sentence-strip /
+  playlist-panel layout per the v3 frames (`D1`–`D3`); mobile redo (stale v1 frames — rebuild on
+  the v3 concept, rail collapses per the Design section's notes above).
 - **Accessibility is an acceptance criterion, not a nicety.** The frames set the log at **11px
   — too small; use ≥12px.** Every screen must survive **200% zoom** without truncation, keep
-  visible keyboard focus, and respect `prefers-reduced-motion` (the chip/row re-flow is the
-  whole delight moment, so it needs a static fallback). Run the `web-design-guidelines` skill
-  against the **code** once it exists — it audits UI code, so it was deliberately _not_ run
-  against the Figma file.
-- **Frontend surfaces:** `src/app/page.tsx`, `src/components/PlaylistGenerator.tsx`,
-  `src/components/PlaylistHistory.tsx`, `src/app/globals.css`, `src/components/ui/*`.
-  `globals.css` is still **stock shadcn** (every colour zero-chroma) with a hardcoded
-  `text-red-700` blackletter title in `page.tsx` — the Radix token layer replaces both.
-- **Backend surfaces:** `src/server/playlist/managers/PlaylistManager.ts` (emit progress) and
-  `src/app/api/playlists/preview/route.ts` (stream it). `SpotifyResource` and both Engines are
-  **unchanged** — the art/swap widening is cancelled.
-- **Verify** with Playwright MCP driving the full flow (login → sentence → live search →
-  create → history) at desktop + mobile, against the v3 frames.
+  visible keyboard focus, and respect `prefers-reduced-motion` (the chip/row re-flow is the whole
+  delight moment, so it needs a static fallback). Run the `web-design-guidelines` skill against
+  the **code** once it exists — it audits UI code, so it was deliberately _not_ run against the
+  Figma file.
+- **Verify** with Playwright MCP driving the full flow (login → sentence → live search → create →
+  history) at desktop + mobile, against the v3 frames.
 
 **Done when (Setup):** skills installed, section on `main`, branch exists. ✅
 **Done when (Design):** owner has agreed the visual direction and screen set in Figma. ✅
-**Done when (Implement):** a logged-in user completes the whole flow in the browser against the
-agreed design, watching the search happen live; Playwright screenshots match the v3 frames at
-desktop + mobile.
+**Done when (Implement, Chunk 1):** the live streaming progress view works end-to-end against a
+real Spotify account, in the existing (unstyled) look. ✅ (manually browser-verified; Playwright
+MCP verification deferred to Chunk 2 alongside the visual design it needs to compare against)
+**Done when (Implement, Chunk 2):** a logged-in user completes the whole flow in the browser
+against the agreed v3 design, watching the search happen live; Playwright screenshots match the
+v3 frames at desktop + mobile.
 
 ### Filed away (not doing)
 

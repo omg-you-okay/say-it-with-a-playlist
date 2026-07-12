@@ -1,13 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { MissingTokensError } from "@/server/identity/managers/UserManager";
-import { createPlaylistManager } from "@/server/playlist/managers/PlaylistManager";
+import {
+  createPlaylistManager,
+  type PreviewEvent,
+} from "@/server/playlist/managers/PlaylistManager";
 import { readSessionToken, SESSION_COOKIE } from "@/server/shared/session";
 
 // POST /api/playlists/preview — the decompose-and-match step of the Iteration
-// 4 preview-then-create flow (ADR 0012): matches the sentence to real Spotify
-// tracks but creates nothing. The frontend shows the result and lets the user
-// confirm before POSTing the same tracks to /api/playlists/create.
+// 4 preview-then-create flow (ADR 0012). Streams progress as NDJSON (ADR
+// 0013): the Manager emits PreviewEvents through a callback as its
+// backtracking loop runs, and this route adapts that callback into one JSON
+// object per line. 401 (no session) and 400 (bad body) are decided before the
+// stream opens and stay real status codes; everything after that — including
+// ADR 0003's no-full-cover case and any mid-search failure — is a terminal
+// event on the stream, because by the time the matcher knows, the response's
+// 200 and headers are already on the wire.
+
+type StreamEvent =
+  | PreviewEvent
+  | { type: "error"; message: string; code?: string };
 
 export async function POST(request: NextRequest) {
   const userId = await readSessionToken(
@@ -26,24 +38,52 @@ export async function POST(request: NextRequest) {
   if (typeof sentence !== "string" || sentence.trim() === "") {
     return NextResponse.json({ error: "missing_sentence" }, { status: 400 });
   }
+  const validSentence = sentence;
 
-  try {
-    const result = await createPlaylistManager().previewSentence(
-      userId,
-      sentence,
-    );
-    if (!result.ok) {
-      return NextResponse.json(
-        { unmatched: result.unmatched },
-        { status: 422 },
-      );
-    }
-    return NextResponse.json({ tracks: result.tracks });
-  } catch (error) {
-    if (error instanceof MissingTokensError) {
-      return NextResponse.json({ error: "login_required" }, { status: 401 });
-    }
-    console.error("Playlist preview failed", error);
-    return NextResponse.json({ error: "preview_failed" }, { status: 500 });
-  }
+  const encoder = new TextEncoder();
+  // The Manager's loop keeps running after a client disconnects (ADR 0013
+  // accepts this — maxSearches bounds it). Enqueueing onto a cancelled stream
+  // throws, so once the client is gone we drop events on the floor instead:
+  // without this, the first post-disconnect event throws out of the loop, the
+  // catch below throws again trying to report it, and close() throws a third
+  // time — turning an ordinary "user hit refresh" into an unhandled rejection.
+  let open = true;
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      function send(event: StreamEvent) {
+        if (!open) return;
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      }
+      try {
+        await createPlaylistManager().previewSentence(
+          userId,
+          validSentence,
+          send,
+        );
+      } catch (error) {
+        if (error instanceof MissingTokensError) {
+          send({
+            type: "error",
+            message: "Your session expired — please log in again.",
+            code: "login_required",
+          });
+        } else {
+          console.error("Playlist preview failed", error);
+          send({ type: "error", message: "preview_failed" });
+        }
+      } finally {
+        if (open) controller.close();
+      }
+    },
+    cancel() {
+      open = false;
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-store",
+    },
+  });
 }

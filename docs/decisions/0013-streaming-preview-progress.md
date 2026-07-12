@@ -102,3 +102,10 @@ response has already been sent with `200` and headers are on the wire. Mid-strea
 - A client that disconnects mid-search leaves the server's fan-out running to completion. Acceptable
   for the single-user MVP (the per-request `maxSearches` budget from Iteration 3 already bounds the
   worst case); revisit with an `AbortSignal` if it ever matters.
+- **Implementation (Iteration 6, Chunk 1) added two fields beyond the event shape sketched above,
+  both additive:** `index` (the word position) on `try`/`hit`/`miss`/`split`, and `wordCount` on
+  `hit`. Without a position, the client can't tell that a `hit` got backtracked out of the eventual
+  answer when its remainder later dead-ends — the live positional list would drift from what the
+  terminal `done` actually reports. `split` fires whenever the loop abandons a candidate at an
+  index and moves to a shorter grouping there, whether the cause was a miss or a hit whose
+  remainder dead-ended — the client prunes its positional list from that index on either way.
