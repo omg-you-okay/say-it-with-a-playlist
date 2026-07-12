@@ -336,16 +336,20 @@ where they are easier to get right anyway. Do **not** treat them as open design 
 
 shadcn/ui + Tailwind (ADR 0001). Tests alongside (CLAUDE.md §7).
 
-**The long pole is streaming preview.** `PlaylistManager.matchSentence` must **emit progress
-events** as it searches; `POST /api/playlists/preview` must **stream** them (SSE or NDJSON)
-instead of returning one blob; the client renders track state and the log from the stream.
-Architecturally clean: the Manager already owns the orchestration loop (CLAUDE.md §4), so
-emitting from it violates no iDesign rule — Engines stay pure, `SpotifyResource` untouched, no
-layer skipping.
+**The long pole is streaming preview — now locked in [ADR 0013](decisions/0013-streaming-preview-progress.md)
+(read it before writing code; it amends ADR 0012).** In short: `PlaylistManager` emits progress
+through an **optional injected `onProgress` callback** (the Manager already owns the orchestration
+loop, so that is where "what am I doing right now" belongs — CLAUDE.md §4); the **route** adapts
+that callback into a streamed **NDJSON** response. Engines stay pure and untouched,
+`SpotifyResource` untouched, no layer skipping. The callback being optional means every existing
+caller and test keeps working, and the loop is testable by collecting events into an array — no
+HTTP needed.
 
-- **Owes ADR 0013** — streaming preview + the progress-event contract. It changes ADR 0012's
-  preview wire contract (preview is no longer a single JSON response), so it is a locked
-  decision that must be logged, not an implementation detail.
+Two contract changes fall out, both recorded in ADR 0013: the terminal `done` event carries the
+full track list (so ADR 0012's "create trusts the client-confirmed tracks" still holds), and
+**`422` (no full cover) becomes a terminal event rather than a status code** — by the time the
+matcher knows, the `200` and its headers are already on the wire.
+
 - **Accessibility is an acceptance criterion, not a nicety.** The frames set the log at **11px
   — too small; use ≥12px.** Every screen must survive **200% zoom** without truncation, keep
   visible keyboard focus, and respect `prefers-reduced-motion` (the chip/row re-flow is the

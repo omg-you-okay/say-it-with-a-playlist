@@ -4,6 +4,12 @@ Date: 2026-07-04 · Status: accepted · Supersedes the single-shot `generatePlay
 use case from Iteration 3 ([roadmap](../roadmap.md) Iteration 3) and its hard-coded
 `public: false` (flagged as a deferred question in that iteration's review)
 
+> **Amended by [ADR 0013](0013-streaming-preview-progress.md) (2026-07-12):** preview is no
+> longer a single JSON response — it streams NDJSON progress events, and its `422` (no full
+> cover) became a terminal event rather than a status code. The preview/create **split**, the
+> **"create trusts the client-confirmed tracks"** rule, and the **create** route below are all
+> unchanged; the terminal stream event carries the same track list the client echoes to create.
+
 ## Context
 
 Iteration 3 shipped one endpoint, `POST /api/playlists/generate`, that matched the
