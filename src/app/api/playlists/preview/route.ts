@@ -20,6 +20,18 @@ import { readSessionToken, SESSION_COOKIE } from "@/server/shared/session";
 // event on the stream, because by the time the matcher knows, the response's
 // 200 and headers are already on the wire.
 
+// `pg` speaks the Postgres wire protocol over TCP, which the Edge runtime has
+// no sockets for — this route (like every route that touches the database) must
+// run on Node. It is the default; saying so out loud keeps a future edge opt-in
+// from silently breaking the one route that would notice last.
+export const runtime = "nodejs";
+
+// The backtracking search is bounded by `maxSearches`, not by the clock, and a
+// stubborn sentence can spend a long time in it. 60s is the ceiling the hosting
+// plan allows; without this the platform default would cut the NDJSON stream
+// mid-search and the user would watch the progress view simply stop.
+export const maxDuration = 60;
+
 type StreamEvent =
   | PreviewEvent
   | { type: "error"; message: string; code?: string };

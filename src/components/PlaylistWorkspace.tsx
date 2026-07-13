@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -487,8 +488,20 @@ export function PlaylistWorkspace({
           />
         </div>
 
-        <p className="shrink-0 px-1 text-xs text-muted-foreground">
-          Content from Spotify
+        {/* Spotify's design guidelines require their logo — not a lookalike we
+            draw ourselves — wherever content from their API is displayed, at a
+            minimum full-logo width of 70px. The wordmark is part of the asset,
+            so the sentence finishes in the image rather than repeating "Spotify"
+            beside it. */}
+        <p className="flex shrink-0 items-center gap-1.5 px-1 text-xs text-muted-foreground">
+          Content from
+          <Image
+            src="/spotify-logo.png"
+            alt="Spotify"
+            width={70}
+            height={21}
+            unoptimized
+          />
         </p>
       </aside>
     </div>
