@@ -31,6 +31,7 @@ function makeDeps(overrides: Partial<UserManagerDeps> = {}): {
   tokenResource: {
     save: ReturnType<typeof vi.fn>;
     get: ReturnType<typeof vi.fn>;
+    withLockedTokens: ReturnType<typeof vi.fn>;
   };
   createSession: ReturnType<typeof vi.fn>;
 } {
@@ -58,8 +59,26 @@ function makeDeps(overrides: Partial<UserManagerDeps> = {}): {
     findById: vi.fn(async (): Promise<AppUser | null> => user),
   };
   const tokenResource = {
-    save: vi.fn(async () => {}),
+    save: vi.fn<(userId: string, tokens: StoredTokens) => Promise<void>>(
+      async () => {},
+    ),
     get: vi.fn(async (): Promise<StoredTokens | null> => null),
+    // Stands in for the real row lock: re-read through `get`, and hand back a
+    // `save` bound to the same user. Serialization itself is Postgres' job, so
+    // it is asserted in the integration test, not here.
+    withLockedTokens: vi.fn(
+      async (
+        userId: string,
+        fn: (locked: {
+          tokens: StoredTokens | null;
+          save: (t: StoredTokens) => Promise<void>;
+        }) => Promise<unknown>,
+      ) =>
+        fn({
+          tokens: await tokenResource.get(),
+          save: (tokens: StoredTokens) => tokenResource.save(userId, tokens),
+        }),
+    ),
   };
   const createSession = vi.fn(async (id: string) => `session-for-${id}`);
 

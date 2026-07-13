@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { MissingTokensError } from "@/server/identity/managers/UserManager";
+import {
+  MissingTokensError,
+  ReauthRequiredError,
+} from "@/server/identity/managers/UserManager";
 import {
   createPlaylistManager,
   type MatchedTrack,
@@ -76,7 +79,12 @@ export async function POST(request: NextRequest) {
     );
     return NextResponse.json({ url: result.url });
   } catch (error) {
-    if (error instanceof MissingTokensError) {
+    // No tokens stored, or Spotify has rejected the grant outright (the app was
+    // revoked). Either way the only way forward is signing in again.
+    if (
+      error instanceof MissingTokensError ||
+      error instanceof ReauthRequiredError
+    ) {
       return NextResponse.json({ error: "login_required" }, { status: 401 });
     }
     console.error("Playlist creation failed", error);

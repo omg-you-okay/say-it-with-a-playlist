@@ -3,6 +3,7 @@ import { createSessionToken } from "@/server/shared/session";
 
 import {
   createAuthEngine,
+  ReauthRequiredError,
   type AuthEngine,
   type SpotifyTokenSet,
 } from "../engines/AuthEngine";
@@ -83,6 +84,12 @@ export class MissingTokensError extends Error {
   }
 }
 
+// Identity's two ways of saying "this user has to log in again" — no tokens at
+// all, and a grant Spotify has rejected for good. The Manager is the subsystem's
+// public front door (ADR 0009), so callers outside Identity — which may not
+// reach past it to an Engine — get the re-auth type from here.
+export { ReauthRequiredError };
+
 // The engine's token shape and the resource's stored shape are deliberately
 // separate types (ADR 0008). Map field-by-field so drift in either shape is a
 // compile error here, not a silent structural coincidence.
@@ -140,17 +147,35 @@ export function makeUserManager(deps: UserManagerDeps): UserManager {
     },
 
     async getFreshAccessToken(userId) {
+      const isFresh = (tokens: StoredTokens) =>
+        tokens.expiresAt.getTime() - now() > refreshSkewMs;
+
+      // Fast path: the token is almost always still good, so read it without
+      // paying for a lock.
       const stored = await tokenResource.get(userId);
       if (!stored) throw new MissingTokensError(userId);
+      if (isFresh(stored)) return stored.accessToken;
 
-      const stillValid = stored.expiresAt.getTime() - now() > refreshSkewMs;
-      if (stillValid) return stored.accessToken;
+      // Slow path. Refreshing is read-then-write and Spotify may rotate the
+      // refresh token as it goes, so two callers racing here can each refresh
+      // with the same token and the loser can write a dead one over the
+      // winner's live one — logging the user out permanently. Serialize the
+      // refresh so exactly one caller performs it (ADR 0017).
+      return tokenResource.withLockedTokens(
+        userId,
+        async ({ tokens, save }) => {
+          if (!tokens) throw new MissingTokensError(userId);
+          // Re-check under the lock: whoever we queued behind may already have
+          // refreshed, in which case there is nothing left to do but use theirs.
+          if (isFresh(tokens)) return tokens.accessToken;
 
-      const refreshed = await authEngine.refreshAccessToken(
-        stored.refreshToken,
+          const refreshed = await authEngine.refreshAccessToken(
+            tokens.refreshToken,
+          );
+          await save(toStoredTokens(refreshed));
+          return refreshed.accessToken;
+        },
       );
-      await tokenResource.save(userId, toStoredTokens(refreshed));
-      return refreshed.accessToken;
     },
   };
 }

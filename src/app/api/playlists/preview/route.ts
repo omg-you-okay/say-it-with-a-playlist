@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { MissingTokensError } from "@/server/identity/managers/UserManager";
+import {
+  MissingTokensError,
+  ReauthRequiredError,
+} from "@/server/identity/managers/UserManager";
 import {
   createPlaylistManager,
   type PreviewEvent,
@@ -61,7 +64,13 @@ export async function POST(request: NextRequest) {
           send,
         );
       } catch (error) {
-        if (error instanceof MissingTokensError) {
+        // No tokens stored, or Spotify has rejected the grant outright (the app
+        // was revoked). Both mean the same thing to the user, and the frontend
+        // already renders `login_required` as a prompt to sign in again.
+        if (
+          error instanceof MissingTokensError ||
+          error instanceof ReauthRequiredError
+        ) {
           send({
             type: "error",
             message: "Your session expired — please log in again.",
