@@ -15,10 +15,25 @@ const globalForDb = globalThis as typeof globalThis & {
   __siwapPool?: Pool;
 };
 
+// In production this runs on serverless instances, and *each* instance builds
+// its own pool — so the per-instance ceiling is not the real limit, the number
+// of live instances multiplied by it is. Keep it low and let the hosted pooler
+// (Neon's `-pooler` endpoint) do the fan-in it exists for. It has to stay above
+// 1: `TokenResource.withLockedTokens` holds one connection for the length of a
+// refresh while a racing caller blocks on the row lock holding another.
+const MAX_CONNECTIONS = 5;
+
 export function getPool(): Pool {
   if (!globalForDb.__siwapPool) {
     globalForDb.__siwapPool = new Pool({
+      // TLS is negotiated from the URL's `sslmode`, the standard Postgres knob:
+      // the hosted DATABASE_URL carries `?sslmode=require`, and the local
+      // docker-compose one omits it (that Postgres speaks no TLS). Hard-coding
+      // `ssl` here would need a NODE_ENV branch and would break local dev.
       connectionString: requireEnv("DATABASE_URL"),
+      max: MAX_CONNECTIONS,
+      // A frozen serverless instance should not sit on an idle connection.
+      idleTimeoutMillis: 10_000,
     });
   }
   return globalForDb.__siwapPool;

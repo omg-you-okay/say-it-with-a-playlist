@@ -6,7 +6,7 @@ boundaries, and every other part of ADR 0001 are unchanged.
 
 ## Context
 
-The Iteration 6 v3 design (frames in `docs/design/`, roadmap Iteration 6 → Design) specifies
+The Iteration 6 v3 design (frames in Figma, indexed in roadmap Iteration 6 → Design) specifies
 controls that are not variants of the shadcn primitives — they are different controls:
 
 - a **pill CTA** carrying Spotify's mandated `PLAY ON SPOTIFY` copy and their green,
@@ -54,3 +54,21 @@ might "helpfully" reintroduce, fighting the design.
   live-region strategy for the log. The `web-design-guidelines` skill run against the code is the
   standing check.
 - Reversible, and cheap to reverse: `pnpm dlx shadcn add button input label switch` restores them.
+
+## Amendment (2026-07-13, Iteration 8) — the leftovers this ADR missed
+
+Deleting the primitives left an island of packages behind that nothing imported, and this ADR did
+not address them. Iteration 8 removed all four (75 transitive packages):
+
+- `class-variance-authority` — existed only for the deleted primitives' `cva` bases. Zero
+  references.
+- `radix-ui` — zero imports. (The one "radix" mention left in `globals.css` is a comment about
+  Radix **Colors**, a token palette, which is a different thing entirely.)
+- `clsx` + `tailwind-merge` — used only inside `src/lib/utils.ts`, whose `cn()` helper was itself
+  imported by nothing. The whole island was kept alive only by its own members.
+
+**The decision above is unchanged**: `shadcn` and `components.json` stay. `shadcn` is not
+vestigial — `globals.css` imports its token layer (`@import "shadcn/tailwind.css"`) — and the CLI
+remains the sanctioned generator for a future dialog or popover. `shadcn add` re-adds
+`clsx`/`tailwind-merge`/`cn()` on its own when that day comes, so removing them now costs nothing
+and is not a reversal.

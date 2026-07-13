@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { MissingTokensError } from "@/server/identity/managers/UserManager";
+import {
+  MissingTokensError,
+  ReauthRequiredError,
+} from "@/server/identity/managers/UserManager";
 import {
   createPlaylistManager,
   type PreviewEvent,
@@ -16,6 +19,18 @@ import { readSessionToken, SESSION_COOKIE } from "@/server/shared/session";
 // ADR 0003's no-full-cover case and any mid-search failure — is a terminal
 // event on the stream, because by the time the matcher knows, the response's
 // 200 and headers are already on the wire.
+
+// `pg` speaks the Postgres wire protocol over TCP, which the Edge runtime has
+// no sockets for — this route (like every route that touches the database) must
+// run on Node. It is the default; saying so out loud keeps a future edge opt-in
+// from silently breaking the one route that would notice last.
+export const runtime = "nodejs";
+
+// The backtracking search is bounded by `maxSearches`, not by the clock, and a
+// stubborn sentence can spend a long time in it. 60s is the ceiling the hosting
+// plan allows; without this the platform default would cut the NDJSON stream
+// mid-search and the user would watch the progress view simply stop.
+export const maxDuration = 60;
 
 type StreamEvent =
   | PreviewEvent
@@ -61,7 +76,13 @@ export async function POST(request: NextRequest) {
           send,
         );
       } catch (error) {
-        if (error instanceof MissingTokensError) {
+        // No tokens stored, or Spotify has rejected the grant outright (the app
+        // was revoked). Both mean the same thing to the user, and the frontend
+        // already renders `login_required` as a prompt to sign in again.
+        if (
+          error instanceof MissingTokensError ||
+          error instanceof ReauthRequiredError
+        ) {
           send({
             type: "error",
             message: "Your session expired — please log in again.",

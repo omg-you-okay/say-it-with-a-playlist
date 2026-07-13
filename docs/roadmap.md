@@ -6,11 +6,12 @@
 > does not relitigate them. One iteration ≈ one phase ≈ one (or a few) small PRs into
 > `main` (GitHub Flow, ADR 0007).
 
-**Stack (ADR 0001):** Next.js full-stack (App Router) · Supabase = managed Postgres in
-prod only · Tailwind · TypeScript · Vitest (+ jsdom/Testing Library for component tests,
-Iteration 6). Data access via the `pg` driver, added the iteration it is first needed
-(ADR 0005). Local DB = single `postgres:17-alpine` container. **UI components are bespoke
-Tailwind; shadcn is retained as a generator, not the component layer (ADR 0014, amends 0001).**
+**Stack (ADR 0001):** Next.js full-stack (App Router) · Tailwind · TypeScript · Vitest
+(+ jsdom/Testing Library for component tests, Iteration 6). Data access via the `pg` driver,
+added the iteration it is first needed (ADR 0005). Local DB = single `postgres:17-alpine`
+container. **UI components are bespoke Tailwind; shadcn is retained as a generator, not the
+component layer (ADR 0014, amends 0001).** **Prod = Vercel Hobby + Neon, both free (ADR 0016,
+supersedes 0001's Supabase-in-prod — its free tier now pauses a project after 7 idle days).**
 
 **iDesign layering (CLAUDE.md §4):** Managers → (Engines, Resources). Engines never call
 Engines. No layer skipping. Crossing a subsystem boundary goes through a **manager-resource**
@@ -616,31 +617,80 @@ reason: "no_match"` — one word, correctly not mislabeled as a budget give-up (
 
 ---
 
-## What's next — the MVP phase plan (CLAUDE.md §9) is complete
+## Iteration 8 — Ship it (2026-07-13)
 
-Iterations 0–7 are done: the app does the whole job, in the agreed design, live against real
-Spotify, with the recall/failure-honesty fixes from Iteration 7. There is **no Iteration 8
-planned** — the next session should pick from the debt below rather than assume a queue exists.
-Roughly in the order the project would feel them:
+The MVP phase plan (CLAUDE.md §9) finished at Iteration 7 and nothing was deployed. This iteration
+paid the deploy debt, plus the two pieces of correctness debt that serverless makes _worse_, and
+swept out the dead weight. **Deployed on Vercel + Neon, at $0.**
 
-1. **Ship it (nothing is deployed).** Still owed since Iteration 1: hosted Supabase, a deploy
-   target, and a **secrets strategy** (local `.env` / CI secrets / prod env) — the last is a
-   decision that was explicitly deferred and never made. **Blocker before any public deploy:** the
-   Spotify **logo asset** (Iteration 6 — their guidelines require the mark on Spotify-derived
-   content and forbid recreating it; only the text attribution is rendered today).
-2. **CI e2e.** Deferred since Iteration 5 and now well-earned: Iteration 6 shipped **five** layout
-   bugs that typecheck, lint and 170 unit/component tests could not see, because jsdom has no layout
-   engine. All were caught by measuring a real browser. Chunk 2 also proved the harness is cheap —
-   intercept `POST /api/playlists/preview` and serve a synthetic NDJSON stream, and the whole live
-   view is drivable with **no Spotify and no OAuth**, which was the original blocker.
-3. **Correctness debt, in rough severity order:** the concurrent-refresh race in
-   `UserManager.getFreshAccessToken` (owed since Iteration 2); `invalid_grant` re-auth UX (Iteration
-   3); the orphaned-playlist-on-partial-failure and >100-track cases (Iteration 3 review).
-4. **Playwright MCP** is still pinned to the wrong browser channel — check a fresh connection before
-   trusting it (Iteration 6 Chunk 2).
+**Decisions:** [ADR 0016](decisions/0016-deploy-vercel-hobby-neon.md) (Vercel Hobby + Neon,
+superseding ADR 0001's Supabase-in-prod; secrets strategy; the Spotify quota ceiling),
+[ADR 0017](decisions/0017-serialized-token-refresh.md) (row-locked refresh; typed dead grant), and
+an amendment to [ADR 0014](decisions/0014-bespoke-ui-components.md) (the shadcn leftovers it
+missed). Runbook: [`docs/deployment.md`](deployment.md).
+
+**The ceiling we found, and accepted.** Spotify rewrote Development Mode on **11 Feb 2026**; our
+client ID postdates it, so the app is capped at **5 Premium test users, added by hand**. Extended
+Quota Mode now needs a registered business and 250k MAU. The app is genuinely live — it is not
+genuinely _public_, and it cannot be. Worth knowing before anyone plans around it. Because
+Spotify's allowlist is the gate, we deliberately built **no rate limiting and no abuse protection**;
+those absences are a decision, not an oversight.
+
+**Correctness, both live-verified:**
+
+- **The concurrent-refresh race is dead** (owed since Iteration 2). It was worse than "duplicate
+  work": Spotify may rotate the refresh token, and `AuthEngine` correctly falls back to the old one
+  when a refresh response omits it — so the loser of the race would write a **dead** refresh token
+  over the winner's live one and log the user out permanently. Now serialized on a Postgres
+  `SELECT … FOR UPDATE` with a double check, because Postgres is the only thing serverless
+  instances share (an in-process mutex would have "fixed" it locally and left it live in prod).
+  The test fails against the old code with _"expected 1 times, but got 2 times"_ — the bug,
+  reproduced.
+- **`invalid_grant` is no longer a dead end** (owed since Iteration 3). A revoked grant threw a
+  bare `Error` and surfaced as `preview_failed`. It now has its own type and maps to the
+  `login_required` path the frontend **already rendered** — the fix needed no frontend work at all.
+
+**Swept out:** four dead packages (`class-variance-authority`, `radix-ui`, `clsx`, `tailwind-merge`
+— 75 transitive) and the orphaned `cn()` helper nothing imported; the Playwright MCP server (never
+a dependency, never worked); `chrome-devtools` permission entries pointing at a server that was
+never defined. **shadcn stays** — `globals.css` imports its token layer and the CLI is still the
+generator (ADR 0014 was right, it just left litter).
+
+**Also:** the Spotify logo asset — the last "hard blocker" from Iteration 6. Their guidelines
+require the mark and forbid recreating it, so it is their official asset at their mandated 70px
+minimum.
+
+Suite: 183 → **188 tests**.
+
+---
+
+## What's next
+
+Iterations 0–8 are done and the app is deployed. No Iteration 9 is planned — pick from the debt
+below rather than assume a queue exists.
+
+1. **CI e2e.** Deferred since Iteration 5, and the strongest remaining item: Iteration 6 shipped
+   **five** layout bugs that typecheck, lint and the (now) 188 unit/component tests could not see,
+   because jsdom has no layout engine. All were caught only by measuring a real browser. The harness
+   is cheap — intercept `POST /api/playlists/preview` and serve a synthetic NDJSON stream, and the
+   whole live view is drivable with **no Spotify and no OAuth**, which was the original blocker.
+   Note Iteration 8 removed the Playwright **MCP server** (a tool for the agent); this item is about
+   Playwright as a **devDependency with real specs in CI**, which is a different thing and still
+   worth doing.
+2. **Remaining correctness debt:** orphaned-playlist-on-partial-failure and the >100-track case
+   (both Iteration 3 review). Neither is likely at five users, and both are real.
+3. **Two sources of truth in the terminal render states** (Iteration 6): the sentence strip renders
+   `live.placed` while the panel renders `phase.tracks`. They agree today only because of the prune
+   rule. Deriving the strip from `phase.tracks` once search settles would delete the bug class.
+4. **`page.tsx` over-provisions its managers** (Iteration 6): it builds both a PlaylistManager and a
+   UserManager — each eagerly `requireEnv`-ing all three `SPOTIFY_*` vars — for two reads that only
+   touch Postgres. Couples DB reads to Spotify config for no reason.
 5. **Re-tune Iteration 7's recall fix on a larger sentence corpus** if matching complaints
    resurface — the deepening bound and search budget were measured against a handful of probed
    sentences, not a broad sample (see Iteration 7's "Not done").
+6. **Dev-login papercut:** the integration tests `TRUNCATE users CASCADE` against the same local DB
+   the dev server uses, so `pnpm test` silently logs you out of your local session.
 
-_(The NDJSON contract test, previously debt item 3 here, was closed in Iteration 7 —
-`src/lib/preview-stream.contract.test.ts`.)_
+_(Closed: the NDJSON contract test, Iteration 7. The concurrent-refresh race, `invalid_grant` UX,
+the Spotify logo asset, the deploy and its secrets strategy, and the Playwright-MCP browser-channel
+question — all Iteration 8.)_

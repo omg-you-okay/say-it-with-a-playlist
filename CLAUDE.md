@@ -75,9 +75,11 @@ The project follows the **iDesign methodology** — decomposition by volatility,
 
 - Spotify **OAuth 2.0 Authorization Code Flow** — required because the app performs delegated actions (creating playlists) on the user's account and needs refresh capability
 - **The backend holds all tokens.** Access and refresh tokens never reach the frontend
-- Token refresh is handled server-side
+- Token refresh is handled server-side, and is **serialized on a Postgres row lock** — concurrent refreshes could otherwise write a dead refresh token over a live one and log the user out permanently (ADR 0017)
 - How the frontend knows the user is logged in: **decided** — httpOnly signed session cookie (ADR 0002, see §8)
 - API credentials/secrets live in environment configuration, never in source
+
+**A hard external ceiling (not a bug, and no code fixes it):** Spotify rewrote Development Mode on 2026-02-11. This app's client ID postdates that, so it is capped at **5 test users, each needing Spotify Premium, each added by hand** in the Spotify dashboard. Extended Quota Mode requires a registered business and 250k MAU. The app is deployed and live, but it cannot be _public_. Because Spotify's allowlist is the gate, the app deliberately has **no rate limiting and no abuse protection** — that absence is a decision (ADR 0016), not an oversight.
 
 ---
 
@@ -107,13 +109,14 @@ This is as important as the code itself; the project deliberately practices prof
 
 ## 8. Formerly Open Decisions (all resolved — answers live in ADRs; do not re-decide)
 
-| Question                                  | Resolved in                                                                                                |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| "Good enough" track-title match           | ADR 0003 — exact equality after normalization                                                              |
-| Behaviour when no match exists            | ADR 0003 — no playlist created; response lists the unmatched words/phrases                                 |
-| Frontend session strategy after OAuth     | ADR 0002 — httpOnly, SameSite=Lax signed JWT cookie; payload = app user id                                 |
-| Full, agreed list of substitution rules   | ADR 0003 — config-driven map in SentenceEngine (to→2, you→U, one→1…, and→&…); extended by ADR 0015 (too→2) |
-| Auto-generated playlist naming convention | ADR 0003 — the sentence itself (≤100 chars); branding in the description                                   |
+| Question                                  | Resolved in                                                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Good enough" track-title match           | ADR 0003 — exact equality after normalization                                                                                                           |
+| Behaviour when no match exists            | ADR 0003 — no playlist created; response lists the unmatched words/phrases                                                                              |
+| Frontend session strategy after OAuth     | ADR 0002 — httpOnly, SameSite=Lax signed JWT cookie; payload = app user id                                                                              |
+| Full, agreed list of substitution rules   | ADR 0003 — config-driven map in SentenceEngine (to→2, you→U, one→1…, and→&…); extended by ADR 0015 (too→2)                                              |
+| Auto-generated playlist naming convention | ADR 0003 — the sentence itself (≤100 chars); branding in the description                                                                                |
+| Production hosting + the secrets strategy | ADR 0016 — Vercel Hobby + Neon, both free; secrets in platform env config, prod `SESSION_SECRET` never shared with local. Runbook: `docs/deployment.md` |
 
 ---
 

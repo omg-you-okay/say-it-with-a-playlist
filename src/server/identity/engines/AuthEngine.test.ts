@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createAuthEngine } from "./AuthEngine";
+import { createAuthEngine, ReauthRequiredError } from "./AuthEngine";
 
 const config = {
   clientId: "client-abc",
@@ -160,6 +160,47 @@ describe("AuthEngine.refreshAccessToken", () => {
     });
     const tokens = await engine.refreshAccessToken("old-refresh");
     expect(tokens.refreshToken).toBe("rotated-refresh");
+  });
+
+  // A revoked or rotated-out refresh token is not a transient failure: no retry
+  // fixes it, only the user consenting again. It gets its own type so callers
+  // can route it to the re-auth prompt instead of a generic error (ADR 0017).
+  it("throws ReauthRequiredError when Spotify reports invalid_grant", async () => {
+    const fetchFn = vi.fn<
+      (url: string, init: RequestInit) => Promise<Response>
+    >(async () =>
+      errorResponse(
+        400,
+        JSON.stringify({
+          error: "invalid_grant",
+          error_description: "Refresh token revoked",
+        }),
+      ),
+    );
+    const engine = createAuthEngine({
+      ...config,
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    await expect(
+      engine.refreshAccessToken("dead-refresh"),
+    ).rejects.toBeInstanceOf(ReauthRequiredError);
+  });
+
+  it("throws a plain error for a transient Spotify failure, not a re-auth prompt", async () => {
+    const fetchFn = vi.fn<
+      (url: string, init: RequestInit) => Promise<Response>
+    >(async () => errorResponse(503, "upstream boom"));
+    const engine = createAuthEngine({
+      ...config,
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    const error = await engine
+      .refreshAccessToken("good-refresh")
+      .catch((e: unknown) => e);
+    // Sending the user to log in again would be wrong here — the grant is fine,
+    // Spotify simply fell over.
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(ReauthRequiredError);
   });
 });
 

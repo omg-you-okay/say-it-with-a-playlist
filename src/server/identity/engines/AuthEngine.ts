@@ -67,6 +67,42 @@ export interface AuthEngine {
   fetchProfile(accessToken: string): Promise<SpotifyProfile>;
 }
 
+/**
+ * The grant is dead and no retry will revive it — the user revoked the app in
+ * their Spotify account, or the refresh token was rotated out from under us.
+ * Distinct from a transient Spotify failure precisely because the only way
+ * forward is for the user to log in again, so callers can route it to the
+ * re-auth path instead of showing a generic error (ADR 0017).
+ */
+export class ReauthRequiredError extends Error {
+  constructor(detail?: string) {
+    super(
+      detail
+        ? `Spotify rejected the grant: ${detail}`
+        : "Spotify rejected the grant",
+    );
+    this.name = "ReauthRequiredError";
+  }
+}
+
+/**
+ * Spotify reports a dead grant as a JSON body `{"error":"invalid_grant", …}`.
+ * Read it off the raw text we already captured for the error message — the body
+ * is a one-shot stream, so it cannot be re-read as JSON afterwards.
+ */
+function isInvalidGrant(body: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      (parsed as { error?: unknown }).error === "invalid_grant"
+    );
+  } catch {
+    return false; // not JSON — some other failure
+  }
+}
+
 export function createAuthEngine(config: AuthEngineConfig): AuthEngine {
   const fetchFn = config.fetchFn ?? fetch;
   const now = config.now ?? Date.now;
@@ -112,6 +148,12 @@ export function createAuthEngine(config: AuthEngineConfig): AuthEngine {
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
+      // OAuth 2.0 spells a dead grant `invalid_grant` (RFC 6749 §5.2) — a
+      // revoked or rotated-out refresh token. Retrying cannot fix it; only the
+      // user re-consenting can, so it gets its own type.
+      if (isInvalidGrant(detail)) {
+        throw new ReauthRequiredError(detail);
+      }
       throw new Error(
         `Spotify token request failed (${res.status}): ${detail}`,
       );
