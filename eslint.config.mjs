@@ -117,6 +117,17 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Playwright e2e (ADR 0018). Its fixture API takes a callback param literally
+  // named `use` (`async ({ page }, use) => { await use(value) }`), which the
+  // react-hooks plugin misreads as a call to React's `use` hook and flags as a
+  // rules-of-hooks violation. These files are Playwright, not React — turn the
+  // rule off here rather than pepper the fixtures with disable comments.
+  {
+    files: ["e2e/**/*.ts", "playwright.config.ts"],
+    rules: {
+      "react-hooks/rules-of-hooks": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
