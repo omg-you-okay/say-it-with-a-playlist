@@ -69,3 +69,24 @@ jobs:
 
       - name: build
         run: pnpm build
+
+      # End-to-end layout tests in a real browser (ADR 0018). Both viewport
+      # projects are Chromium-based, so only Chromium is installed. Playwright
+      # serves the build produced above via `next start` (a build break should
+      # read as a build failure, not an e2e timeout) and drives it against the
+      # Postgres service already up for the integration tests.
+      - name: install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: e2e
+        run: pnpm exec playwright test
+
+      # Keep the trace/report from a failed run so a CI-only layout failure is
+      # debuggable as a filmstrip rather than a bare assertion diff.
+      - name: upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

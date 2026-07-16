@@ -664,33 +664,79 @@ Suite: 183 → **188 tests**.
 
 ---
 
+## Iteration 9 — CI e2e safety net ✅ DONE (branch `feature/safety-net`)
+
+Not part of the original phase plan (CLAUDE.md §9) — pays the "CI e2e" debt deferred since
+Iteration 5 and repeatedly re-flagged (it was "What's next" item #1). Iteration 6 shipped **five**
+layout bugs to `main` past a fully green pipeline because **jsdom has no layout engine** — it cannot
+measure `scrollWidth`/`clientHeight`, so no unit assertion can see an element that escaped its
+scroll container or a page that grew sideways. Every one was caught only by a human looking at a
+real browser. Now that the app is deployed (Iteration 8), that class of bug reaches users.
+
+**Decision:** [ADR 0018](decisions/0018-ci-e2e-real-browser.md) — a **Playwright** suite that drives
+the live search view in a real Chromium browser at desktop **and** mobile viewports, and runs in CI.
+Hermetic by construction (no Spotify, no OAuth, no network), via two seams:
+
+- **Session minted, not walked:** `e2e/session.ts` signs a cookie with the app's own
+  `createSessionToken` + a fixed test `SESSION_SECRET`, pinned on both the Playwright process and the
+  `next start` server it boots (`playwright.config.ts`). Walking Spotify's consent screen was the
+  original blocker and is the wrong thing to test — that's Spotify's code, and ours is already
+  covered by the OAuth integration tests.
+- **Preview stream stubbed at `fetch`:** `e2e/fixtures.ts` patches `window.fetch` (before
+  navigation) to serve a scripted NDJSON sequence as a genuine progressively-chunked
+  `ReadableStream` — deliberately **not** `route.fulfill`, whose single-chunk delivery would collapse
+  the progressive render into one pass and hide exactly the bugs this exists to catch.
+
+Shipped: `playwright.config.ts` (desktop Chrome + Pixel 7, production build via `next start` on
+:3100); `e2e/{session,fixtures}.ts` (the two seams + `loggedIn`/`preview` fixtures); the first specs
+in `e2e/live-search.spec.ts` — **(1)** the sentence is carved into tracks with no horizontal page
+overflow (both viewports — Iteration 6's overflow bugs were width-dependent), and **(2)** the
+expanded log's overflow lives inside its own box rather than growing the document (desktop, the
+pinned-viewport invariant), a direct regression guard for layout bug #1 and the `sr-only`
+phantom-scroll bug. `pnpm e2e` builds then runs; CI grows a Chromium install + e2e step reusing the
+existing Postgres service and the build it already produced, and uploads the Playwright report on
+failure. Scope is deliberately narrow — **the geometry jsdom cannot measure**; the state machine
+itself stays covered by `PlaylistWorkspace.test.tsx`. Suite unchanged at 188 unit/component tests +
+2 e2e specs (×2 projects, 1 desktop-only).
+
+- **Follow-ups (not blocking, worth doing as the suite grows):**
+  - The `create` step is not stubbed (the fixture only intercepts `/preview`), so the specs stop at
+    the previewed state and do not click **Create playlist** — clicking it would hit the real
+    `/api/playlists/create` → Spotify. Stub `/create` too when a spec needs to exercise the footer
+    swap to `PLAY ON SPOTIFY` in a browser (jsdom already covers that transition).
+  - Only the two headline layout invariants are guarded. As new layout bugs surface, add the
+    specific geometry assertion here rather than relying on someone looking.
+- **Done when:** the live view is driven in a real browser in CI, with no Spotify/OAuth, and a
+  layout regression of the Iteration 6 class fails the build. ✅ (verified locally: `pnpm e2e` green
+  — 3 passed, 1 desktop-only spec skipped on mobile; full gate green — format/lint/typecheck/188
+  unit tests)
+
+---
+
 ## What's next
 
-Iterations 0–8 are done and the app is deployed. No Iteration 9 is planned — pick from the debt
-below rather than assume a queue exists.
+Iterations 0–9 are done and the app is deployed. No further iteration is planned — pick from the
+debt below rather than assume a queue exists.
 
-1. **CI e2e.** Deferred since Iteration 5, and the strongest remaining item: Iteration 6 shipped
-   **five** layout bugs that typecheck, lint and the (now) 188 unit/component tests could not see,
-   because jsdom has no layout engine. All were caught only by measuring a real browser. The harness
-   is cheap — intercept `POST /api/playlists/preview` and serve a synthetic NDJSON stream, and the
-   whole live view is drivable with **no Spotify and no OAuth**, which was the original blocker.
-   Note Iteration 8 removed the Playwright **MCP server** (a tool for the agent); this item is about
-   Playwright as a **devDependency with real specs in CI**, which is a different thing and still
-   worth doing.
-2. **Remaining correctness debt:** orphaned-playlist-on-partial-failure and the >100-track case
+1. **Remaining correctness debt:** orphaned-playlist-on-partial-failure and the >100-track case
    (both Iteration 3 review). Neither is likely at five users, and both are real.
-3. **Two sources of truth in the terminal render states** (Iteration 6): the sentence strip renders
+2. **Two sources of truth in the terminal render states** (Iteration 6): the sentence strip renders
    `live.placed` while the panel renders `phase.tracks`. They agree today only because of the prune
    rule. Deriving the strip from `phase.tracks` once search settles would delete the bug class.
-4. **`page.tsx` over-provisions its managers** (Iteration 6): it builds both a PlaylistManager and a
+3. **`page.tsx` over-provisions its managers** (Iteration 6): it builds both a PlaylistManager and a
    UserManager — each eagerly `requireEnv`-ing all three `SPOTIFY_*` vars — for two reads that only
    touch Postgres. Couples DB reads to Spotify config for no reason.
-5. **Re-tune Iteration 7's recall fix on a larger sentence corpus** if matching complaints
+4. **Re-tune Iteration 7's recall fix on a larger sentence corpus** if matching complaints
    resurface — the deepening bound and search budget were measured against a handful of probed
    sentences, not a broad sample (see Iteration 7's "Not done").
-6. **Dev-login papercut:** the integration tests `TRUNCATE users CASCADE` against the same local DB
-   the dev server uses, so `pnpm test` silently logs you out of your local session.
+5. **Dev-login papercut:** the integration tests `TRUNCATE users CASCADE` against the same local DB
+   the dev server uses, so `pnpm test` silently logs you out of your local session. The e2e suite
+   (Iteration 9) does **not** add to this — it reads only, against an unknown user id, and truncates
+   nothing.
+6. **Grow the e2e suite** (Iteration 9): only two headline layout invariants are guarded so far, and
+   the `create` step isn't stubbed (specs stop at the previewed state). Add specs — and a `/create`
+   stub — as new layout bugs surface or the browser-side create flow needs cover.
 
-_(Closed: the NDJSON contract test, Iteration 7. The concurrent-refresh race, `invalid_grant` UX,
-the Spotify logo asset, the deploy and its secrets strategy, and the Playwright-MCP browser-channel
-question — all Iteration 8.)_
+_(Closed: the CI e2e safety net, Iteration 9. The NDJSON contract test, Iteration 7. The
+concurrent-refresh race, `invalid_grant` UX, the Spotify logo asset, the deploy and its secrets
+strategy, and the Playwright-MCP browser-channel question — all Iteration 8.)_

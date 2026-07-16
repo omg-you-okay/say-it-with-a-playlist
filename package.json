@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e": "next build && playwright test",
+    "e2e:report": "playwright show-report",
     "db:migrate": "node scripts/apply-migrations.mjs",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
@@ -29,6 +31,7 @@
   },
   "devDependencies": {
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
